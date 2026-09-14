@@ -1,0 +1,315 @@
+// ---------------------------------------------------------------------------
+// 腎臟病飲食紀錄 App — 資料庫 Schema (PostgreSQL, 透過 Prisma 管理)
+//
+// 設計原則：
+// 1. 每一張照片都獨立成一筆 Photo 記錄，帶有完整的技術中繼資料 (時間、像素、
+//    檔案大小、裝置資訊…)，方便日後研究分析「照片品質 / 拍攝行為」與辨識結果
+//    之間的關聯。
+// 2. 一次用餐 = 一筆 MealRecord，底下掛「餐前」「餐後」兩張 Photo，兩者的時間
+//    差即為用餐時長 (mealDurationSeconds)。
+// 3. NutritionEstimate 是「預留給未來辨識模型」的資料表：現在完全不會有程式去
+//    真的填入辨識結果，但每張照片上傳時就會建立一筆 status=NOT_STARTED 的
+//    佔位記錄，未來接上模型只需要一支背景工作程序把這些記錄轉成 COMPLETED，
+//    不需要改動任何現有 schema。
+// 4. 遊戲化 (點數/連續紀錄/徽章) 全部採「事件溯源」設計 (PointsLedger 只增不改)，
+//    保留完整歷程，方便未來研究「使用行為與依從性」的關聯。
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================== 使用者 / 帳號 ==============================
+
+enum UserRole {
+  PATIENT
+  RESEARCHER
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  role         UserRole @default(PATIENT)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  patientProfile PatientProfile?
+  mealRecords    MealRecord[]
+  photos         Photo[]
+  pointsLedger   PointsLedgerEntry[]
+  streak         UserStreak?
+  badges         UserBadge[]
+  refreshTokens  RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+enum Sex {
+  MALE
+  FEMALE
+  OTHER
+}
+
+// 慢性腎臟病分期，供研究時分層分析使用
+enum CkdStage {
+  STAGE_1
+  STAGE_2
+  STAGE_3A
+  STAGE_3B
+  STAGE_4
+  STAGE_5
+  TRANSPLANT
+  UNKNOWN
+}
+
+enum DialysisType {
+  NONE
+  HEMODIALYSIS
+  PERITONEAL_DIALYSIS
+}
+
+// 病人臨床背景資料，與 User 是 1:1。獨立成表是為了讓 User 保持單純的帳號資訊，
+// 未來若要加入更多臨床欄位 (如用藥、檢驗值來源…) 不會動到帳號/認證相關邏輯。
+model PatientProfile {
+  userId               String       @id
+  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dateOfBirth          DateTime?
+  sex                  Sex?
+  heightCm             Float?
+  weightKg             Float?
+  ckdStage             CkdStage     @default(UNKNOWN)
+  dialysisType         DialysisType @default(NONE)
+
+  // 每日攝取目標上限，由病人自填或未來由衛教師設定，供 App 做「今日是否超標」提示，
+  // 也是未來辨識功能算出攝取量後，要比對的基準值。單位固定用 mg / g / ml，
+  // 避免不同紀錄混用單位造成研究資料髒污。
+  dailySodiumLimitMg    Int?
+  dailyPotassiumLimitMg Int?
+  dailyPhosphorusLimitMg Int?
+  dailyProteinLimitG    Int?
+  dailyFluidLimitMl     Int?
+
+  notes                String?
+  updatedAt            DateTime     @updatedAt
+
+  @@map("patient_profiles")
+}
+
+// ============================== 用餐紀錄 ==============================
+
+enum MealType {
+  BREAKFAST
+  LUNCH
+  DINNER
+  SNACK
+}
+
+enum MealRecordStatus {
+  AWAITING_POST_PHOTO // 已拍餐前照，等待餐後照
+  COMPLETED           // 餐前/餐後皆已完成
+  ABANDONED           // 病人主動放棄這筆紀錄 (例如忘記拍餐後照太久)
+}
+
+// 一次用餐事件。餐前/餐後照片各自是一筆 Photo，用 phase 區分，
+// 兩者的時間差 = mealDurationSeconds，滿足「推算用餐時間」的需求。
+model MealRecord {
+  id                   String            @id @default(uuid())
+  userId               String
+  user                 User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  mealType             MealType
+  status               MealRecordStatus  @default(AWAITING_POST_PHOTO)
+
+  preMealAt            DateTime          // 餐前照拍攝時間 (client 回報)
+  postMealAt           DateTime?         // 餐後照拍攝時間 (完成後才有值)
+  mealDurationSeconds  Int?              // = postMealAt - preMealAt，完成時寫入，避免每次查詢重算
+
+  notes                String?           // 病人可自由備註 (吃了什麼、當下感受…)
+
+  photos               Photo[]
+  pointsEntries        PointsLedgerEntry[]
+  badgesAwarded        UserBadge[]
+
+  // 病人刪除紀錄時採「軟刪除」：只標記時間、不真的清掉資料或照片檔案，
+  // 讓病人在 App 上看不到，但研究分析仍能存取完整歷史資料。
+  // 所有一般查詢 (列表/詳情) 都會加上 deletedAt: null 過濾；
+  // 未來研究人員要看完整資料集時，繞過這個過濾條件即可。
+  deletedAt            DateTime?
+
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  @@index([userId, preMealAt])
+  @@map("meal_records")
+}
+
+enum PhotoPhase {
+  PRE_MEAL
+  POST_MEAL
+}
+
+// 每一張照片的完整技術中繼資料。刻意記錄得比目前功能需要的更詳細一點，
+// 是因為這些欄位在「辨識模型還沒選定」的階段最有研究價值
+// (例如：不同像素/檔案大小/裝置的照片，之後跑辨識模型的準確率是否有差異)。
+model Photo {
+  id           String      @id @default(uuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mealRecordId String
+  mealRecord   MealRecord  @relation(fields: [mealRecordId], references: [id], onDelete: Cascade)
+  phase        PhotoPhase
+
+  // 檔案本身
+  storageKey      String   @unique // 在 storage provider 內的相對路徑/物件 key，不寫死本機路徑
+  originalFileName String?
+  mimeType        String
+  fileSizeBytes   Int
+  widthPx         Int
+  heightPx        Int
+  sha256Hash      String   // 內容雜湊，可用來偵測重複上傳 / 驗證完整性
+
+  // 時間資訊 (用餐時間推算 & 研究用)
+  capturedAt              DateTime // 拍照當下時間，由前端在拍照瞬間打上 (可能與上傳時間不同，如離線後補傳)
+  uploadedAt              DateTime @default(now()) // 伺服器收到檔案的時間
+  clientTimezoneOffsetMin Int?     // 前端裝置當下的時區偏移 (分鐘)，避免只看 UTC 誤判在地用餐時段
+
+  // 裝置資訊 (研究照片品質差異用，不含任何精確定位資訊)
+  deviceUserAgent String?
+
+  nutritionEstimate NutritionEstimate?
+
+  createdAt DateTime @default(now())
+
+  @@index([mealRecordId])
+  @@index([userId, capturedAt])
+  @@map("photos")
+}
+
+// ============================== 營養辨識（預留） ==============================
+
+enum NutritionEstimateStatus {
+  NOT_STARTED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// 現階段完全不會被填值的「預留表」。每張 Photo 上傳時都會建立一筆
+// status = NOT_STARTED 的紀錄，未來辨識模型上線後，只要新增一個背景服務
+// 把 NOT_STARTED 的資料轉成 COMPLETED（或 FAILED）即可，前端/其餘 API
+// 完全不需要改動。
+model NutritionEstimate {
+  id          String                  @id @default(uuid())
+  photoId     String                  @unique
+  photo       Photo                   @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  status      NutritionEstimateStatus @default(NOT_STARTED)
+  modelName   String? // 例如 "food-nutrition-vit-v1"，方便比較不同模型版本的表現
+  modelVersion String?
+
+  // 三大重點營養素 + 額外常見指標，單位固定 (mg / g / kcal)，
+  // 未來不論用什麼模型，輸出都要轉換成這個單位存進來，保持資料一致性。
+  sodiumMg      Float?
+  potassiumMg   Float?
+  phosphorusMg  Float?
+  proteinG      Float?
+  calorieKcal   Float?
+  confidenceScore Float? // 0~1，模型對這次估計的信心程度
+
+  rawModelOutput Json?   // 原始模型輸出 (未轉換單位前)，方便除錯與重新校正
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("nutrition_estimates")
+}
+
+// ============================== 遊戲化 ==============================
+
+enum PointsReason {
+  PRE_MEAL_LOGGED
+  POST_MEAL_LOGGED
+  DAILY_ALL_MEALS_BONUS
+  STREAK_MILESTONE
+  BADGE_AWARDED
+  MANUAL_ADJUSTMENT
+}
+
+// 點數帳本：只增不改的事件紀錄 (event-sourced)，目前總點數 = SUM(points)。
+// 好處：完整歷程可回溯，未來要分析「什麼行為驅動使用者持續紀錄」時，
+// 這張表就是現成的行為事件資料。
+model PointsLedgerEntry {
+  id           String       @id @default(uuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  points       Int
+  reason       PointsReason
+  mealRecordId String?
+  mealRecord   MealRecord?  @relation(fields: [mealRecordId], references: [id], onDelete: SetNull)
+  createdAt    DateTime     @default(now())
+
+  @@index([userId, createdAt])
+  @@map("points_ledger_entries")
+}
+
+// 連續紀錄天數。用單獨一張表存「目前狀態」是為了讀取效能
+// (不用每次都掃全部 MealRecord 算連續天數)，實際判斷邏輯在後端 service 裡。
+model UserStreak {
+  userId            String   @id
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentStreakDays Int      @default(0)
+  longestStreakDays Int      @default(0)
+  lastActiveDate    DateTime? // 只存日期 (00:00)，用來判斷今天是否已經算過
+  updatedAt         DateTime @updatedAt
+
+  @@map("user_streaks")
+}
+
+// 徽章目錄 (由 seed script 建立，非病人資料)
+model Badge {
+  id                 String      @id @default(uuid())
+  code               String      @unique // 程式判斷用的固定代碼，例如 "STREAK_7"
+  name               String
+  description        String
+  iconEmoji          String
+  sortOrder          Int         @default(0)
+
+  earnedBy           UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id           String      @id @default(uuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId      String
+  badge        Badge       @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  earnedAt     DateTime    @default(now())
+  mealRecordId String?     // 觸發這次獲得徽章的那筆紀錄 (若適用)
+  mealRecord   MealRecord? @relation(fields: [mealRecordId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, badgeId])
+  @@map("user_badges")
+}
