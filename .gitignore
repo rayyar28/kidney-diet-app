@@ -1,6 +1,12 @@
 node_modules
 dist
+
+# 環境變數：只有 *.example 可以進版控
 .env
+.env.*
+!.env.example
+!.env.production.example
+
 *.local
 backend/uploads/*
 !backend/uploads/.gitkeep

@@ -1,0 +1,62 @@
+# Render Blueprint —— 在 Render 網站選 "New > Blueprint" 並指向這個 repo，
+# 它會照這份設定建立服務。之後改動這個檔案再 push，Render 會同步。
+#
+# 注意：標成 sync: false 的環境變數不會從這個檔案讀取，必須在 Render 的
+# Dashboard 手動填入。密鑰本來就不該進版控。
+
+services:
+  - type: web
+    name: kidney-diet-api
+    runtime: docker
+    repo: https://github.com/rayyar28/kidney-diet-app
+    branch: master
+    dockerfilePath: ./backend/Dockerfile.prod
+    dockerContext: ./backend
+
+    # ★ 一定要用 starter 以上。free 方案閒置 15 分鐘就會休眠，
+    #   病人早上打開 App 要等 30 秒以上才會有反應，正式收案不能接受。
+    plan: starter
+
+    # 新加坡是 Render 離台灣最近的機房
+    region: singapore
+
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+
+      # --- 資料庫（Neon）---
+      - key: DATABASE_URL
+        sync: false
+
+      # --- JWT 金鑰 ---
+      # generateValue 會讓 Render 自動產生一組隨機值並固定下來，
+      # 比自己想一組更安全，也不會不小心跟開發環境用到同一組。
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 30d
+
+      # --- 允許的前端來源（Cloudflare Pages 網址）---
+      # 可用逗號分隔多組，例如正式網址 + 預覽網址
+      - key: CORS_ORIGIN
+        sync: false
+
+      # --- 照片儲存：Cloudflare R2 ---
+      - key: STORAGE_DRIVER
+        value: r2
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: SIGNED_URL_TTL_SECONDS
+        value: "300"

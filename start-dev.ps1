@@ -1,4 +1,4 @@
-# 本機原生開發環境啟動腳本（不透過 Docker）
+﻿# 本機原生開發環境啟動腳本（不透過 Docker）
 # 用法：在 PowerShell 裡執行 .\start-dev.ps1
 # 會依序：啟動本機 PostgreSQL 叢集 -> 啟動後端 -> 啟動前端
 
@@ -24,12 +24,14 @@ if ($pgStatus -match "no server running") {
 }
 
 # 2. 啟動後端（新視窗）
+# -ExecutionPolicy Bypass 是必要的：npm run dev 在 PowerShell 裡其實是執行
+# npm.ps1，沒有這個參數，新開的視窗一樣會被「未經數位簽署」擋下來。
 Write-Host "啟動後端 (http://localhost:4000)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root\backend'; npm run dev"
+Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "cd '$root\backend'; npm run dev"
 
 # 3. 啟動前端（新視窗）
 Write-Host "啟動前端 (http://localhost:5173)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root\frontend'; npm run dev"
+Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", "cd '$root\frontend'; npm run dev"
 
 Write-Host ""
 Write-Host "都啟動好了！瀏覽器打開 http://localhost:5173" -ForegroundColor Green

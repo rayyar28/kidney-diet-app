@@ -1,0 +1,21 @@
+FROM node:20-bookworm-slim
+
+# Prisma 的查詢引擎在 Debian slim 上需要 openssl
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+
+RUN npx prisma generate && npm run build
+RUN chmod +x docker-entrypoint.prod.sh
+
+# Render 會自己注入 PORT 環境變數，這裡只是文件用途
+EXPOSE 4000
+
+ENTRYPOINT ["./docker-entrypoint.prod.sh"]
+CMD ["node", "dist/index.js"]

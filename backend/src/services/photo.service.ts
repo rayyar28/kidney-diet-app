@@ -43,7 +43,11 @@ export async function ingestPhoto(params: {
     mealRecordId,
     `${phase.toLowerCase()}-${Date.now()}.${ext}`
   );
-  const storageKey = await storageService.save({ buffer: photo.buffer, keyHint });
+  const storageKey = await storageService.save({
+    buffer: photo.buffer,
+    keyHint,
+    contentType: photo.mimeType,
+  });
 
   const created = await prisma.photo.create({
     data: {

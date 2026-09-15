@@ -1,6 +1,19 @@
 import { useAuthStore } from "../store/auth";
 
-const API_BASE = "/api";
+/**
+ * API 位址。
+ *
+ * 開發時不設 VITE_API_BASE_URL，會用相對路徑 "/api"，由 vite.config.ts 的
+ * proxy 轉發到本機後端。
+ *
+ * 正式環境前端在 Cloudflare Pages、後端在 Render，兩者不同網域，所以要在
+ * Cloudflare Pages 的環境變數設定 VITE_API_BASE_URL，例如：
+ *   VITE_API_BASE_URL=https://kidney-diet-api.onrender.com/api
+ *
+ * 注意：Vite 的環境變數是「建置時」寫進 bundle 的，不是執行時讀取。
+ * 改了這個值必須重新 build + 重新部署才會生效。
+ */
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -89,6 +102,10 @@ export const api = {
  * 照片是受保護的資源，<img src> 沒辦法帶 Authorization header，
  * 所以改成 fetch 二進位內容後轉成 blob: URL。呼叫端記得在 unmount 時
  * revokeObjectURL 釋放記憶體 (見 components/AuthedImage.tsx)。
+ *
+ * 正式環境後端會回 302 轉址到 R2 的簽名網址，fetch 會自動跟著轉址，
+ * 瀏覽器在跨網域轉址時會拿掉 Authorization header（這是我們要的行為，
+ * R2 的簽名網址本身就帶了授權資訊）。
  */
 export async function fetchPhotoBlobUrl(photoId: string, retry = true): Promise<string> {
   const { accessToken } = useAuthStore.getState();

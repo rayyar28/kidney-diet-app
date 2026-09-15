@@ -10,7 +10,27 @@ import { errorMiddleware } from "./middleware/error.middleware.js";
 
 const app = express();
 
-app.use(cors({ origin: env.corsOrigin }));
+// Render 之類的平台會把服務放在反向代理後面。沒有這一行的話，
+// express-rate-limit 會把所有請求都看成來自同一個 IP（代理的 IP），
+// 導致一個病人觸發限制、全部病人一起被擋。
+app.set("trust proxy", 1);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // 沒有 Origin header 的請求（健康檢查、curl、同源請求）直接放行
+      if (!origin) return callback(null, true);
+      if (env.corsOrigins.includes(origin)) return callback(null, true);
+      // Cloudflare Quick Tunnel 網址是隨機字串、每次重開都會換，demo/開發階段
+      // 直接放行整個 *.trycloudflare.com，不用每次改 .env。網址本身無法猜測，
+      // 且僅用於臨時測試，不是正式環境設定。
+      if (/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(origin)) return callback(null, true);
+      callback(new Error(`不允許的來源：${origin}`));
+    },
+    credentials: false,
+  })
+);
+
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -25,4 +45,6 @@ app.use(errorMiddleware);
 
 app.listen(env.port, () => {
   console.log(`API server listening on port ${env.port}`);
+  console.log(`Storage driver: ${env.storageDriver}`);
+  console.log(`Allowed origins: ${env.corsOrigins.join(", ")}`);
 });
