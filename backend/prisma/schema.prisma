@@ -194,6 +194,15 @@ model Photo {
   uploadedAt              DateTime @default(now()) // 伺服器收到檔案的時間
   clientTimezoneOffsetMin Int?     // 前端裝置當下的時區偏移 (分鐘)，避免只看 UTC 誤判在地用餐時段
 
+  // 離線補傳相關 (研究時判斷時間戳記可信度用)
+  // capturedOffline: 前端自己回報「這張照片是在沒網路時拍下並排隊等待上傳」。
+  // clientClockSkewSeconds: 上傳當下 (伺服器收到時間 - 裝置回報的送出時間)，
+  //   正值代表手機時鐘比實際慢，負值代表比實際快。只在前端有帶 clientSentAt 時才有值。
+  //   capturedAt 與 preMealAt/postMealAt 都是裝置時鐘的原始值，不會被修正；
+  //   研究分析時可用這個欄位自行估算修正量。用餐「時長」是同一個時鐘的兩個時間相減，不受影響。
+  capturedOffline         Boolean  @default(false)
+  clientClockSkewSeconds  Int?
+
   // 裝置資訊 (研究照片品質差異用，不含任何精確定位資訊)
   deviceUserAgent String?
 
@@ -201,6 +210,9 @@ model Photo {
 
   createdAt DateTime @default(now())
 
+  // 同一筆用餐紀錄的同一個階段 (餐前/餐後) 只會有一張照片。
+  // 離線補傳時同一個請求可能被重送，靠這個限制保證重送不會產生重複照片。
+  @@unique([mealRecordId, phase])
   @@index([mealRecordId])
   @@index([userId, capturedAt])
   @@map("photos")

@@ -58,6 +58,8 @@ erDiagram
         datetime capturedAt
         datetime uploadedAt
         string sha256Hash
+        boolean capturedOffline
+        int clientClockSkewSeconds
     }
     NutritionEstimate {
         string id PK
@@ -142,8 +144,14 @@ AWAITING_POST_PHOTO --(病人主動放棄)--> ABANDONED
 | `capturedAt` | 前端在「使用者選定照片的當下」記錄的時間戳（見下方「已知限制」） |
 | `uploadedAt` | 伺服器收到檔案的時間，跟 `capturedAt` 的差可以看出「離線後補傳」的情形 |
 | `clientTimezoneOffsetMin` | 裝置當下的時區偏移，用來把 UTC 時間換算回病人的「當地日期」，這樣連續天數/每日三餐的判斷才會符合病人的實際作息，而不是被 UTC 日期邊界誤判 |
+| `capturedOffline` | 前端自己回報「這張照片是沒網路時拍下、排隊等待上傳的」，研究時可用來區分離線補傳的資料 |
+| `clientClockSkewSeconds` | 上傳當下（伺服器收到時間 − 裝置回報的送出時間）。正值＝手機時鐘偏慢、負值＝偏快。`capturedAt` 等時間戳是裝置時鐘的**原始值、不會被修正**，分析時可用這個欄位自行估算修正量；用餐「時長」是同一個時鐘的兩個時間相減，不受時鐘偏差影響 |
 | `deviceUserAgent` | 裝置/瀏覽器資訊，用於分析照片品質差異的來源 |
 | `storageKey` | 檔案在儲存系統內的相對路徑，不寫死儲存供應商，方便未來從本機磁碟換成雲端物件儲存 |
+
+**唯一限制**：同一筆用餐紀錄的同一個階段（餐前/餐後）只能有一張照片
+（`unique(mealRecordId, phase)`）。離線補傳時，手機可能在「伺服器處理完」與「收到回應」
+之間斷線而重送同一個請求，這個限制加上內容雜湊比對，保證重送不會產生重複資料。
 
 **隱私考量**：目前刻意「不」解析並儲存原始 EXIF（尤其是 GPS 定位資訊），避免意外
 記錄到病人的居住地址等敏感位置資料。如果未來研究需要粗粒度的地理資訊（例如
