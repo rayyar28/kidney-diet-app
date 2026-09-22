@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError } from "../api/client";
 import { CameraCaptureField } from "../components/CameraCaptureField";
+import { createLocalMeal, deleteLocalMeal } from "../offline/mealStore";
+import { syncAndWait } from "../offline/syncEngine";
+import { useAuthStore } from "../store/auth";
 import { useToastStore } from "../store/toast";
 import type { MealType } from "../api/types";
 
@@ -14,6 +16,7 @@ const MEAL_TYPES: Array<{ value: MealType; label: string; icon: string }> = [
 
 export function NewMealPage() {
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
   const showToast = useToastStore((s) => s.show);
   const [mealType, setMealType] = useState<MealType>("BREAKFAST");
   const [file, setFile] = useState<File | null>(null);
@@ -27,21 +30,39 @@ export function NewMealPage() {
       setError("請先拍攝餐前照片");
       return;
     }
+    if (!user) {
+      setError("請先登入");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      const form = new FormData();
-      form.append("photo", file);
-      form.append("mealType", mealType);
-      form.append("capturedAt", capturedAt.toISOString());
-      form.append("tzOffsetMinutes", String(new Date().getTimezoneOffset()));
-      if (notes.trim()) form.append("notes", notes.trim());
+      // 先存進手機本機 (不需要網路，這一步成功就代表資料不會丟)，再試著上傳
+      const meal = await createLocalMeal({
+        userId: user.id,
+        mealType,
+        notes: notes.trim() || null,
+        file,
+        capturedAt,
+      });
 
-      await api.post("/meals/pre-meal", form);
-      showToast("餐前紀錄完成！記得吃完後回來拍餐後照 📸");
+      const outcome = await syncAndWait(meal.id);
+      if (typeof outcome === "object") {
+        // 伺服器明確拒絕這張照片 (格式不對等)。跟原本一樣留在這一頁讓使用者重拍，
+        // 不留下一筆永遠傳不上去的本機紀錄。
+        await deleteLocalMeal(meal.id);
+        setError(outcome.failed);
+        return;
+      }
+
+      showToast(
+        outcome === "synced"
+          ? "餐前紀錄完成！記得吃完後回來拍餐後照 📸"
+          : "已安全存在手機裡，連上網路後會自動上傳。吃完後記得拍餐後照 📸"
+      );
       navigate("/");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "上傳失敗，請再試一次");
+      setError(err instanceof Error ? err.message : "儲存失敗，請再試一次");
     } finally {
       setSubmitting(false);
     }
@@ -85,7 +106,7 @@ export function NewMealPage() {
         {error && <p className="error-text">{error}</p>}
 
         <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={submit} disabled={submitting}>
-          {submitting ? "上傳中..." : "送出餐前紀錄"}
+          {submitting ? "儲存中..." : "送出餐前紀錄"}
         </button>
         <button className="btn btn-ghost" style={{ width: "100%", marginTop: 8 }} onClick={() => navigate(-1)}>
           取消

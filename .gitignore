@@ -11,3 +11,4 @@ dist
 backend/uploads/*
 !backend/uploads/.gitkeep
 .devdata/
+*.tsbuildinfo

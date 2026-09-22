@@ -21,6 +21,34 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * 連不上伺服器 (沒網路、訊號中斷、DNS 失敗、請求逾時)。跟 ApiError 分開，
+ * 因為離線同步要靠它判斷「這不是資料有問題，稍後重試就好」。
+ */
+class NetworkError extends Error {
+  constructor(message = "無法連線到伺服器") {
+    super(message);
+  }
+}
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    // fetch 在連不上時丟 TypeError；逾時是我們自己 abort 的 AbortError
+    if (err instanceof TypeError || (err instanceof DOMException && err.name === "AbortError")) {
+      throw new NetworkError();
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // refresh token 是「一次性、用了就撤銷」的，如果好幾個請求同時收到 401、
 // 各自獨立呼叫 refresh，只有最先送達的那個會成功，其他幾個會拿著已經被撤銷
 // 的 token 失敗，進而把剛剛才寫進去的新 token 又清掉、把病人整個登出。
@@ -39,14 +67,27 @@ function refreshAccessToken(): Promise<boolean> {
 async function doRefreshAccessToken(): Promise<boolean> {
   const { refreshToken, setTokens, clearAuth } = useAuthStore.getState();
   if (!refreshToken) return false;
-  const res = await fetch(`${API_BASE}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken }),
-  });
+  // 連不上時 fetchWithTimeout 會丟 NetworkError，直接往外傳，不能當成「登入失效」
+  const res = await fetchWithTimeout(
+    `${API_BASE}/auth/refresh`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    },
+    DEFAULT_TIMEOUT_MS
+  );
   if (!res.ok) {
-    clearAuth();
-    return false;
+    // 只有伺服器明確說「這個 refresh token 不行」才登出。伺服器暫時掛掉 (5xx)、
+    // 被限流 (429) 時不能登出，否則弱網/伺服器重啟時會把病人整個登出，
+    // 還沒上傳的離線資料也就沒辦法補傳了。
+    if (res.status === 400 || res.status === 401 || res.status === 403) {
+      clearAuth();
+      return false;
+    }
+    // 一律回報成 503 (暫時不可用)：換發失敗是伺服器的問題，不是「這一筆資料有問題」，
+    // 同步佇列看到 503 會整個停下來稍後重試，而不是把正在上傳的那一餐誤判成可疑。
+    throw new ApiError(503, "暫時無法更新登入狀態，請稍後再試");
   }
   const data = await res.json();
   setTokens(data.accessToken, data.refreshToken);
@@ -58,6 +99,8 @@ interface RequestOptions {
   body?: unknown;
   isForm?: boolean;
   skipAuth?: boolean;
+  /** 上傳照片要給比較長的時間 (弱網下一張幾 MB 的照片) */
+  timeoutMs?: number;
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}, retry = true): Promise<T> {
@@ -73,7 +116,11 @@ async function request<T>(path: string, opts: RequestOptions = {}, retry = true)
     body = JSON.stringify(opts.body);
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { method: opts.method ?? "GET", headers, body });
+  const res = await fetchWithTimeout(
+    `${API_BASE}${path}`,
+    { method: opts.method ?? "GET", headers, body },
+    opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  );
 
   if (res.status === 401 && retry && !opts.skipAuth) {
     const refreshed = await refreshAccessToken();
@@ -109,9 +156,11 @@ export const api = {
  */
 export async function fetchPhotoBlobUrl(photoId: string, retry = true): Promise<string> {
   const { accessToken } = useAuthStore.getState();
-  const res = await fetch(`${API_BASE}/photos/${photoId}/file`, {
-    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-  });
+  const res = await fetchWithTimeout(
+    `${API_BASE}/photos/${photoId}/file`,
+    { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} },
+    DEFAULT_TIMEOUT_MS
+  );
   if (res.status === 401 && retry) {
     const refreshed = await refreshAccessToken();
     if (refreshed) return fetchPhotoBlobUrl(photoId, false);
@@ -121,4 +170,4 @@ export async function fetchPhotoBlobUrl(photoId: string, retry = true): Promise<
   return URL.createObjectURL(blob);
 }
 
-export { ApiError };
+export { ApiError, NetworkError };

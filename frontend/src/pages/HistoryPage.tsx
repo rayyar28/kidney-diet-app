@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError } from "../api/client";
 import { BottomNav } from "../components/BottomNav";
 import { AuthedImage } from "../components/AuthedImage";
+import { SyncStatusBar } from "../components/SyncStatusBar";
+import { Toast } from "../components/Toast";
+import { discardFailedMeal, requestRemove, retryFailedMeal } from "../offline/mealStore";
+import { requestSync } from "../offline/syncEngine";
+import { useMealViews } from "../offline/useMealViews";
+import type { MealView } from "../offline/types";
+import { useAuthStore } from "../store/auth";
 import { useToastStore } from "../store/toast";
-import type { MealRecord } from "../api/types";
 
 const MEAL_TYPE_LABEL: Record<string, string> = {
   BREAKFAST: "早餐",
@@ -27,43 +32,59 @@ function formatDuration(seconds: number | null): string {
   return `${h} 時 ${m % 60} 分`;
 }
 
+/** 優先用本機縮圖 (不需要網路、立刻顯示)，沒有才向伺服器載入 */
+function MealPhoto({ thumb, photoId, alt }: { thumb: string | null; photoId?: string; alt: string }) {
+  if (thumb) return <img src={thumb} alt={alt} />;
+  if (photoId) return <AuthedImage photoId={photoId} alt={alt} />;
+  return null;
+}
+
 export function HistoryPage() {
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
   const showToast = useToastStore((s) => s.show);
-  const [items, setItems] = useState<MealRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { meals, loading, offline } = useMealViews();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const confirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    api.get<{ items: MealRecord[] }>("/meals?pageSize=50").then((data) => {
-      setItems(data.items);
-      setLoading(false);
-    });
-    return () => {
+  useEffect(
+    () => () => {
       if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current);
-    };
-  }, []);
+    },
+    []
+  );
 
-  function handleDeleteClick(mealId: string, e: MouseEvent) {
+  async function handleDeleteClick(meal: MealView, e: MouseEvent) {
     e.stopPropagation();
-    if (confirmingId !== mealId) {
-      setConfirmingId(mealId);
+    if (confirmingId !== meal.id) {
+      setConfirmingId(meal.id);
       if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current);
       confirmTimeoutRef.current = setTimeout(() => setConfirmingId(null), 4000);
       return;
     }
     if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current);
     setConfirmingId(null);
-    api
-      .delete(`/meals/${mealId}`)
-      .then(() => {
-        setItems((prev) => prev.filter((m) => m.id !== mealId));
-        showToast("已刪除這筆紀錄");
-      })
-      .catch((err) => {
-        showToast(err instanceof ApiError ? err.message : "刪除失敗，請再試一次");
-      });
+    if (!user) return;
+    try {
+      // 離線也能刪：畫面上立刻消失，連上網路後才通知伺服器 (跟線上一樣是軟刪除)
+      await requestRemove({ userId: user.id, mealId: meal.id, serverMeal: meal });
+      showToast("已刪除這筆紀錄");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "刪除失敗，請再試一次");
+    }
+  }
+
+  async function handleRetry(mealId: string, e: MouseEvent) {
+    e.stopPropagation();
+    await retryFailedMeal(mealId);
+    void requestSync({ force: true });
+  }
+
+  async function handleDiscard(mealId: string, e: MouseEvent) {
+    e.stopPropagation();
+    if (!window.confirm("確定要捨棄這筆上傳失敗的紀錄嗎？捨棄後無法復原。")) return;
+    await discardFailedMeal(mealId);
+    showToast("已捨棄");
   }
 
   return (
@@ -72,13 +93,14 @@ export function HistoryPage() {
         <div style={{ fontSize: 18, fontWeight: 700 }}>我的紀錄</div>
       </div>
       <div className="page">
+        <SyncStatusBar offline={offline} />
         {loading && <p style={{ color: "var(--color-text-muted)" }}>載入中...</p>}
-        {!loading && items.length === 0 && (
+        {!loading && meals.length === 0 && (
           <p style={{ color: "var(--color-text-muted)", textAlign: "center", marginTop: 40 }}>
             還沒有任何紀錄，去首頁拍下第一餐吧！
           </p>
         )}
-        {items.map((meal) => {
+        {meals.map((meal) => {
           const pre = meal.photos?.find((p) => p.phase === "PRE_MEAL");
           const post = meal.photos?.find((p) => p.phase === "POST_MEAL");
           const status = STATUS_LABEL[meal.status];
@@ -92,26 +114,30 @@ export function HistoryPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <span style={{ fontWeight: 700 }}>{MEAL_TYPE_LABEL[meal.mealType]}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {meal.sync === "pending" && <span className="tag">☁️ 待上傳</span>}
+                  {meal.sync === "failed" && <span className="tag tag-failed">⚠️ 上傳失敗</span>}
                   <span className={status.className}>{status.text}</span>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{
-                      padding: "4px 10px",
-                      fontSize: 12,
-                      color: confirmingId === meal.id ? "var(--color-danger)" : "var(--color-text-muted)",
-                      fontWeight: confirmingId === meal.id ? 700 : 400,
-                    }}
-                    onClick={(e) => handleDeleteClick(meal.id, e)}
-                  >
-                    {confirmingId === meal.id ? "確定刪除？" : "刪除"}
-                  </button>
+                  {meal.sync !== "failed" && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: 12,
+                        color: confirmingId === meal.id ? "var(--color-danger)" : "var(--color-text-muted)",
+                        fontWeight: confirmingId === meal.id ? 700 : 400,
+                      }}
+                      onClick={(e) => handleDeleteClick(meal, e)}
+                    >
+                      {confirmingId === meal.id ? "確定刪除？" : "刪除"}
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="meal-card">
                 <div className="meal-photos">
-                  {pre && <AuthedImage photoId={pre.id} alt="餐前" />}
-                  {post && <AuthedImage photoId={post.id} alt="餐後" />}
+                  <MealPhoto thumb={meal.preThumbDataUrl} photoId={pre?.id} alt="餐前" />
+                  <MealPhoto thumb={meal.postThumbDataUrl} photoId={post?.id} alt="餐後" />
                 </div>
                 <div style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
                   <div>{new Date(meal.preMealAt).toLocaleString("zh-TW")}</div>
@@ -119,10 +145,26 @@ export function HistoryPage() {
                 </div>
               </div>
               {meal.notes && <p style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}>{meal.notes}</p>}
+              {meal.sync === "failed" && (
+                <div style={{ marginTop: 10 }}>
+                  <p className="error-text" style={{ marginTop: 0 }}>
+                    {meal.failureMessage ?? "上傳失敗"}
+                  </p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button type="button" className="sync-bar-btn" onClick={(e) => handleRetry(meal.id, e)}>
+                      重試上傳
+                    </button>
+                    <button type="button" className="sync-bar-btn" onClick={(e) => handleDiscard(meal.id, e)}>
+                      捨棄這筆
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
       </div>
+      <Toast />
       <BottomNav />
     </div>
   );

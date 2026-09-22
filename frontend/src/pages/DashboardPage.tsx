@@ -1,13 +1,13 @@
-import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api/client";
 import { useAuthStore } from "../store/auth";
 import { BottomNav } from "../components/BottomNav";
 import { ElapsedTimer } from "../components/ElapsedTimer";
+import { SyncStatusBar } from "../components/SyncStatusBar";
 import { Toast } from "../components/Toast";
+import { requestAbandon } from "../offline/mealStore";
+import { useMealViews } from "../offline/useMealViews";
 import { useToastStore } from "../store/toast";
 import { pickEncouragement } from "../content/encouragement";
-import type { GamificationSummary, MealRecord } from "../api/types";
 
 const MEAL_TYPE_LABEL: Record<string, string> = {
   BREAKFAST: "早餐",
@@ -20,32 +20,19 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const showToast = useToastStore((s) => s.show);
-  const [summary, setSummary] = useState<GamificationSummary | null>(null);
-  const [pending, setPending] = useState<MealRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { meals, summary, loading, offline } = useMealViews();
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const pending = meals.filter((m) => m.status === "AWAITING_POST_PHOTO");
+
+  async function abandon(mealId: string) {
+    const meal = meals.find((m) => m.id === mealId);
+    if (!user || !meal) return;
     try {
-      const [summaryData, pendingData] = await Promise.all([
-        api.get<GamificationSummary>("/gamification/summary"),
-        api.get<{ items: MealRecord[] }>("/meals?status=AWAITING_POST_PHOTO&pageSize=10"),
-      ]);
-      setSummary(summaryData);
-      setPending(pendingData.items);
-    } finally {
-      setLoading(false);
+      await requestAbandon({ userId: user.id, mealId, serverMeal: meal });
+      showToast("已放棄這筆紀錄");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "操作失敗，請再試一次");
     }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  async function abandon(id: string) {
-    await api.patch(`/meals/${id}/abandon`);
-    showToast("已放棄這筆紀錄");
-    load();
   }
 
   const encouragement = pickEncouragement(summary?.currentStreakDays ?? 0);
@@ -70,6 +57,8 @@ export function DashboardPage() {
       </div>
 
       <div className="page">
+        <SyncStatusBar offline={offline} />
+
         <div className="encouragement-banner">
           <div className="headline">{encouragement.headline}</div>
           <div className="sub">{encouragement.sub}</div>
@@ -87,6 +76,16 @@ export function DashboardPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <span className="tag tag-waiting">{MEAL_TYPE_LABEL[meal.mealType]} · 等待餐後照</span>
+                    {meal.sync === "pending" && (
+                      <span className="tag" style={{ marginLeft: 6 }}>
+                        ☁️ 待上傳
+                      </span>
+                    )}
+                    {meal.sync === "failed" && (
+                      <span className="tag tag-failed" style={{ marginLeft: 6 }}>
+                        ⚠️ 上傳失敗
+                      </span>
+                    )}
                     <div style={{ marginTop: 6, fontSize: 13, color: "var(--color-text-muted)" }}>
                       <ElapsedTimer since={meal.preMealAt} />
                     </div>

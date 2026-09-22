@@ -7,14 +7,18 @@ export function AuthedImage({ photoId, alt, className }: { photoId: string; alt:
   useEffect(() => {
     let objectUrl: string | null = null;
     let cancelled = false;
-    fetchPhotoBlobUrl(photoId).then((url) => {
-      if (cancelled) {
-        URL.revokeObjectURL(url);
-        return;
-      }
-      objectUrl = url;
-      setSrc(url);
-    });
+    fetchPhotoBlobUrl(photoId)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        objectUrl = url;
+        setSrc(url);
+      })
+      .catch(() => {
+        // 離線或載入失敗：維持灰色佔位，不要丟出未處理的錯誤
+      });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);

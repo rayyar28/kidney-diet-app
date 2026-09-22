@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api/client";
+import { api, NetworkError } from "../api/client";
+import { loadServerCache } from "../offline/mealStore";
+import { useSyncStore } from "../offline/syncStore";
 import { useAuthStore } from "../store/auth";
 import { useToastStore } from "../store/toast";
 import { BottomNav } from "../components/BottomNav";
@@ -36,6 +38,8 @@ export function ProfilePage() {
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const showToast = useToastStore((s) => s.show);
+  const pendingCount = useSyncStore((s) => s.pendingCount);
+  const failedCount = useSyncStore((s) => s.failedCount);
   const [summary, setSummary] = useState<GamificationSummary | null>(null);
   const [profile, setProfile] = useState<PatientProfile>({
     ckdStage: "UNKNOWN",
@@ -47,23 +51,36 @@ export function ProfilePage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.get<GamificationSummary>("/gamification/summary").then(setSummary);
-    api.get<{ user: { patientProfile: PatientProfile | null } }>("/profile").then((data) => {
-      if (data.user.patientProfile) setProfile(data.user.patientProfile);
-    });
-  }, []);
+    // 離線時載不到就維持預設值 (點數等資料改用本機快取)，不要丟出未處理的錯誤
+    if (user) loadServerCache(user.id).then((cached) => cached?.summary && setSummary(cached.summary)).catch(() => {});
+    api.get<GamificationSummary>("/gamification/summary").then(setSummary).catch(() => {});
+    api
+      .get<{ user: { patientProfile: PatientProfile | null } }>("/profile")
+      .then((data) => {
+        if (data.user.patientProfile) setProfile(data.user.patientProfile);
+      })
+      .catch(() => {});
+  }, [user]);
 
   async function save() {
     setSaving(true);
     try {
       await api.put("/profile", profile);
       showToast("已更新個人資料");
+    } catch (err) {
+      showToast(err instanceof NetworkError ? "目前沒有網路，請連上網路後再儲存" : "儲存失敗，請再試一次");
     } finally {
       setSaving(false);
     }
   }
 
   function logout() {
+    if (pendingCount + failedCount > 0) {
+      const ok = window.confirm(
+        `還有 ${pendingCount + failedCount} 筆紀錄還沒上傳完成。登出後它們會繼續保留在這支手機裡，下次用同一個帳號登入並連上網路時會自動上傳。\n\n確定要登出嗎？`
+      );
+      if (!ok) return;
+    }
     clearAuth();
     navigate("/login");
   }

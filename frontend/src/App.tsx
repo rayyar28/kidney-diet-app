@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { startSyncEngine } from "./offline/syncEngine";
 import { useAuthStore } from "./store/auth";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
@@ -16,6 +17,13 @@ function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
+  // 登入期間一直開著同步引擎：把本機還沒上傳的紀錄在有網路時補傳給伺服器
+  const userId = useAuthStore((s) => s.user?.id);
+  useEffect(() => {
+    if (!userId) return;
+    return startSyncEngine();
+  }, [userId]);
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
