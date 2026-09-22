@@ -10,6 +10,9 @@ import { errorMiddleware } from "./middleware/error.middleware.js";
 
 const app = express();
 
+/** Capacitor 原生 App 載入本機網頁時使用的 Origin */
+const CAPACITOR_ORIGINS = new Set(["https://localhost", "capacitor://localhost", "http://localhost"]);
+
 // Render 之類的平台會把服務放在反向代理後面。沒有這一行的話，
 // express-rate-limit 會把所有請求都看成來自同一個 IP（代理的 IP），
 // 導致一個病人觸發限制、全部病人一起被擋。
@@ -25,6 +28,10 @@ app.use(
       // 直接放行整個 *.trycloudflare.com，不用每次改 .env。網址本身無法猜測，
       // 且僅用於臨時測試，不是正式環境設定。
       if (/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(origin)) return callback(null, true);
+      // 包成 Capacitor 原生 App 後，網頁是從裝置本機載入的，Origin 會是這幾個固定值
+      // (Android 預設 https://localhost、iOS 預設 capacitor://localhost)。
+      // 這些不是可以被第三方網站冒用的來源：瀏覽器不會讓一般網頁宣稱自己是這些 Origin。
+      if (CAPACITOR_ORIGINS.has(origin)) return callback(null, true);
       callback(new Error(`不允許的來源：${origin}`));
     },
     credentials: false,

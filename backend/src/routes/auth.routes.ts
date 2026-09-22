@@ -20,10 +20,12 @@ function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+/**
+ * 資料庫這一筆 refresh token 的到期時間。必須跟 JWT 本身的效期一致，
+ * 所以兩邊都從 JWT_REFRESH_EXPIRES_IN 這一個設定算出來（見 config/env.ts）。
+ */
 function refreshExpiryDate(): Date {
-  // 目前設定固定 30 天，與 env.jwtRefreshExpiresIn 的預設值對應
-  const days = 30;
-  return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  return new Date(Date.now() + env.jwtRefreshExpiresMs);
 }
 
 async function issueTokenPair(userId: string, role: string) {

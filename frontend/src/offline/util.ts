@@ -21,6 +21,73 @@ export function isBrowserOnline(): boolean {
 const THUMB_MAX_EDGE = 320;
 
 /**
+ * 上傳前壓縮照片的目標：最長邊 1600px、JPEG 品質 0.82。
+ *
+ * 為什麼要壓：離線模式下照片會留在手機裡直到下次連上伺服器。以原始 4K 照片
+ * (單張 2~4MB) 計算，病人若兩三個月才回診一次，手機裡會囤到 1.5GB 以上，
+ * 年長病人常用的入門機根本放不下。壓過之後大約是原本的 1/10。
+ *
+ * 為什麼是 1600px：食物辨識模型的輸入通常在 224~640px，1600px remains 綽綽有餘，
+ * 未來要換更大的模型也還有餘裕；再往上只是浪費病人的儲存空間與流量。
+ *
+ * 附帶效果：用 canvas 重新編碼會把原始 EXIF 一併去掉，其中包含 GPS 座標——
+ * 這正好也完成了「照片去識別化」這項 IRB 前置工作。但也代表**未來若要改用
+ * EXIF 的拍攝時間，必須在壓縮之前先讀出來**，否則資訊已經被移除。
+ */
+const UPLOAD_MAX_EDGE = 1600;
+const UPLOAD_JPEG_QUALITY = 0.82;
+
+/**
+ * 算出縮放後的尺寸。比目標小的照片不放大（放大只會變糊又變大）。
+ * 抽成純函式是為了可以單獨測試，不需要瀏覽器環境。
+ */
+export function computeTargetSize(
+  width: number,
+  height: number,
+  maxEdge: number = UPLOAD_MAX_EDGE
+): { width: number; height: number; changed: boolean } {
+  const longest = Math.max(width, height);
+  if (longest <= maxEdge) return { width, height, changed: false };
+  const scale = maxEdge / longest;
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+    changed: true,
+  };
+}
+
+/**
+ * 壓縮照片。任何一步失敗（例如瀏覽器解不開 HEIC）都回傳原檔，
+ * 寧可佔空間也不要讓病人的照片上傳不了。
+ */
+export async function compressImage(file: File): Promise<File> {
+  try {
+    if (typeof createImageBitmap !== "function" || typeof document === "undefined") return file;
+    const bitmap = await createImageBitmap(file);
+    const target = computeTargetSize(bitmap.width, bitmap.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = target.width;
+    canvas.height = target.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close?.();
+      return file;
+    }
+    ctx.drawImage(bitmap, 0, 0, target.width, target.height);
+    bitmap.close?.();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", UPLOAD_JPEG_QUALITY)
+    );
+    // 壓完反而更大就用原檔（小圖、或本來就壓得很好的 JPEG 會這樣）
+    if (!blob || blob.size >= file.size) return file;
+    const name = file.name.replace(/\.[^.]+$/, "") || "photo";
+    return new File([blob], `${name}.jpg`, { type: "image/jpeg", lastModified: file.lastModified });
+  } catch {
+    return file;
+  }
+}
+
+/**
  * 產生小縮圖 (data URL)。離線時本機沒有伺服器可以載照片，歷史紀錄靠這張縮圖顯示；
  * 原始大圖上傳成功後就會被刪掉以節省手機空間。失敗 (例如瀏覽器解不開 HEIC) 回 null，
  * 畫面會顯示灰色佔位，不影響上傳。

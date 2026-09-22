@@ -1,19 +1,16 @@
 import { useAuthStore } from "../store/auth";
+import { getApiBase } from "./config";
 
 /**
- * API 位址。
+ * API 位址的決定邏輯集中在 ./config.ts。
  *
- * 開發時不設 VITE_API_BASE_URL，會用相對路徑 "/api"，由 vite.config.ts 的
- * proxy 轉發到本機後端。
+ * 網頁版開發時是相對路徑 "/api"，由 vite.config.ts 的 proxy 轉給本機後端；
+ * 正式環境用建置時的 VITE_API_BASE_URL；打包成 App 的試用版則可以在
+ * App 內設定（因為 App 裡沒有 proxy，而試用階段後端還沒有固定網址）。
  *
- * 正式環境前端在 Cloudflare Pages、後端在 Render，兩者不同網域，所以要在
- * Cloudflare Pages 的環境變數設定 VITE_API_BASE_URL，例如：
- *   VITE_API_BASE_URL=https://kidney-diet-api.onrender.com/api
- *
- * 注意：Vite 的環境變數是「建置時」寫進 bundle 的，不是執行時讀取。
- * 改了這個值必須重新 build + 重新部署才會生效。
+ * 注意：這裡每次都重新呼叫 getApiBase()，不快取成模組層級的常數，
+ * 這樣使用者在 App 裡改了網址之後不用重開 App 就會生效。
  */
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -69,7 +66,7 @@ async function doRefreshAccessToken(): Promise<boolean> {
   if (!refreshToken) return false;
   // 連不上時 fetchWithTimeout 會丟 NetworkError，直接往外傳，不能當成「登入失效」
   const res = await fetchWithTimeout(
-    `${API_BASE}/auth/refresh`,
+    `${getApiBase()}/auth/refresh`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -117,7 +114,7 @@ async function request<T>(path: string, opts: RequestOptions = {}, retry = true)
   }
 
   const res = await fetchWithTimeout(
-    `${API_BASE}${path}`,
+    `${getApiBase()}${path}`,
     { method: opts.method ?? "GET", headers, body },
     opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   );
@@ -157,7 +154,7 @@ export const api = {
 export async function fetchPhotoBlobUrl(photoId: string, retry = true): Promise<string> {
   const { accessToken } = useAuthStore.getState();
   const res = await fetchWithTimeout(
-    `${API_BASE}/photos/${photoId}/file`,
+    `${getApiBase()}/photos/${photoId}/file`,
     { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} },
     DEFAULT_TIMEOUT_MS
   );

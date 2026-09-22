@@ -1,6 +1,11 @@
 node_modules
 dist
 
+# 打包出來的 APK 是建置產物，不進版控：每次重建都是一個新的 4MB 二進位檔，
+# 會讓 repo 無止境長大，而且從原始碼隨時可以重新產生。
+# 要發給別人時，用 GitHub Releases 或直接傳檔案。
+*.apk
+
 # 環境變數：只有 *.example 可以進版控
 .env
 .env.*

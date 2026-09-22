@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError, NetworkError } from "../api/client";
+import { isNativeApp } from "../api/config";
 import { useAuthStore } from "../store/auth";
 import type { AuthUser } from "../api/types";
 
@@ -76,6 +77,12 @@ export function LoginPage() {
         <Link to="/register" className="btn btn-ghost" style={{ textDecoration: "none" }}>
           還沒有帳號？建立新帳號
         </Link>
+        {/* 試用版才需要：讓測試者可以改連到別台後端。正式版寫死網址後這個連結不會出現 */}
+        {isNativeApp() && (
+          <Link to="/setup" className="page-hint" style={{ textAlign: "center" }}>
+            ⚙️ 伺服器設定
+          </Link>
+        )}
       </div>
     </div>
   );

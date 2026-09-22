@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError, NetworkError } from "../api/client";
 import type { MealRecord } from "../api/types";
 import { backoffMs, buildEvents, classifyError, deriveStatus, hasPendingWork, mergeMeals } from "./logic";
+import { computeTargetSize } from "./util";
 import type { LocalMeal, LocalPhotoSlot } from "./types";
 
 function slot(capturedAt: string, over: Partial<LocalPhotoSlot> = {}): LocalPhotoSlot {
@@ -215,5 +216,29 @@ describe("mergeMeals", () => {
     const views = mergeMeals([], [meal("l1", "2026-09-01T04:00:00.000Z", { failure: { kind: "permanent", message: "照片格式不對", at: "" } })]);
     expect(views[0].sync).toBe("failed");
     expect(views[0].failureMessage).toBe("照片格式不對");
+  });
+});
+
+describe("computeTargetSize（上傳前縮圖尺寸）", () => {
+  it("超過上限的照片等比例縮到最長邊", () => {
+    expect(computeTargetSize(4000, 3000, 1600)).toEqual({ width: 1600, height: 1200, changed: true });
+    expect(computeTargetSize(3000, 4000, 1600)).toEqual({ width: 1200, height: 1600, changed: true });
+  });
+
+  it("本來就比上限小的不放大（放大只會變糊又變大）", () => {
+    expect(computeTargetSize(800, 600, 1600)).toEqual({ width: 800, height: 600, changed: false });
+    expect(computeTargetSize(1600, 900, 1600)).toEqual({ width: 1600, height: 900, changed: false });
+  });
+
+  it("極端長寬比不會算出 0 像素", () => {
+    const r = computeTargetSize(8000, 3, 1600);
+    expect(r.width).toBe(1600);
+    expect(r.height).toBeGreaterThanOrEqual(1);
+  });
+
+  it("4K 照片壓縮後像素量約為原本的 1/6，這是容量下降的主因", () => {
+    const before = 3840 * 2160;
+    const t = computeTargetSize(3840, 2160, 1600);
+    expect((t.width * t.height) / before).toBeLessThan(0.2);
   });
 });

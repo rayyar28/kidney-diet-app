@@ -2,7 +2,7 @@ import type { GamificationSummary, MealRecord, MealType } from "../api/types";
 import { idb, updateInTx, STORE_CACHE, STORE_MEALS } from "./db";
 import { hasPendingWork } from "./logic";
 import type { CachedServerData, LocalMeal, LocalPhotoSlot } from "./types";
-import { isBrowserOnline, makeThumbnail, requestPersistentStorage, uuid } from "./util";
+import { compressImage, isBrowserOnline, makeThumbnail, requestPersistentStorage, uuid } from "./util";
 
 /* 本機用餐紀錄的讀寫。所有「寫入」都會通知畫面重新整理 (onLocalChange)。 */
 
@@ -26,12 +26,15 @@ function emit(): void {
 }
 
 async function buildSlot(file: File, capturedAt: Date): Promise<LocalPhotoSlot> {
+  // 壓縮後才存進手機：離線期間照片要一直留在裝置上，原始 4K 檔案會把容量吃光。
+  // 壓縮同時會移除 EXIF（含 GPS），未來若要改用 EXIF 拍攝時間，要在這一行之前讀取。
+  const compressed = await compressImage(file);
   return {
     capturedAt: capturedAt.toISOString(),
     tzOffsetMinutes: capturedAt.getTimezoneOffset(),
     capturedOffline: !isBrowserOnline(),
-    thumbDataUrl: await makeThumbnail(file),
-    file: { blob: file, name: file.name || "photo.jpg", type: file.type || "image/jpeg" },
+    thumbDataUrl: await makeThumbnail(compressed),
+    file: { blob: compressed, name: compressed.name || "photo.jpg", type: compressed.type || "image/jpeg" },
     synced: false,
   };
 }
