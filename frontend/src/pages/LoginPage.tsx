@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, ApiError } from "../api/client";
+import { api, ApiError, NetworkError } from "../api/client";
 import { useAuthStore } from "../store/auth";
 import type { AuthUser } from "../api/types";
 
@@ -25,7 +25,8 @@ export function LoginPage() {
       setSession(data.user, data.accessToken, data.refreshToken);
       navigate("/");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "登入失敗，請稍後再試");
+      if (err instanceof NetworkError) setError("目前沒有網路，請連上網路再登入");
+      else setError(err instanceof ApiError ? err.message : "登入失敗，請稍後再試");
     } finally {
       setLoading(false);
     }
@@ -33,33 +34,48 @@ export function LoginPage() {
 
   return (
     <div className="app-shell">
-      <div className="page center-col" style={{ justifyContent: "center", minHeight: "100%" }}>
-        <div style={{ fontSize: 40 }}>🌱</div>
-        <h1 style={{ margin: 0, fontSize: 22 }}>腎臟飲食小幫手</h1>
-        <p style={{ color: "var(--color-text-muted)", marginTop: -4 }}>記錄三餐，一起守護你的腎臟健康</p>
-        <form onSubmit={onSubmit} style={{ width: "100%", marginTop: 12, textAlign: "left" }}>
+      <form id="login-form" className="page page-center" onSubmit={onSubmit}>
+        <div style={{ fontSize: 56 }}>🌱</div>
+        <h1 className="page-title">腎臟飲食小幫手</h1>
+        <p className="page-hint" style={{ marginBottom: 8 }}>
+          記錄三餐，一起守護腎臟健康
+        </p>
+
+        <div style={{ width: "100%", textAlign: "left" }}>
           <div className="field">
             <label className="label">Email</label>
-            <input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input
+              className="input"
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           </div>
           <div className="field">
             <label className="label">密碼</label>
             <input
               className="input"
               type="password"
+              autoComplete="current-password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
           {error && <p className="error-text">{error}</p>}
-          <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? "登入中..." : "登入"}
-          </button>
-        </form>
-        <p style={{ fontSize: 14, color: "var(--color-text-muted)" }}>
-          還沒有帳號？ <Link to="/register">立即註冊</Link>
-        </p>
+        </div>
+      </form>
+
+      <div className="page-footer">
+        {/* 按鈕固定在畫面底部、在 form 外面，用 form 屬性關聯回去，Enter 送出也能運作 */}
+        <button className="btn btn-primary" type="submit" form="login-form" disabled={loading}>
+          {loading ? "登入中…" : "登入"}
+        </button>
+        <Link to="/register" className="btn btn-ghost" style={{ textDecoration: "none" }}>
+          還沒有帳號？建立新帳號
+        </Link>
       </div>
     </div>
   );

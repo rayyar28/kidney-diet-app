@@ -1,5 +1,3 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { useNavigate } from "react-router-dom";
 import { BottomNav } from "../components/BottomNav";
 import { AuthedImage } from "../components/AuthedImage";
 import { SyncStatusBar } from "../components/SyncStatusBar";
@@ -18,12 +16,6 @@ const MEAL_TYPE_LABEL: Record<string, string> = {
   SNACK: "點心",
 };
 
-const STATUS_LABEL: Record<string, { text: string; className: string }> = {
-  COMPLETED: { text: "已完成", className: "tag" },
-  AWAITING_POST_PHOTO: { text: "等待餐後照", className: "tag tag-waiting" },
-  ABANDONED: { text: "已放棄", className: "tag" },
-};
-
 function formatDuration(seconds: number | null): string {
   if (seconds == null) return "—";
   const m = Math.round(seconds / 60);
@@ -32,39 +24,30 @@ function formatDuration(seconds: number | null): string {
   return `${h} 時 ${m % 60} 分`;
 }
 
-/** 優先用本機縮圖 (不需要網路、立刻顯示)，沒有才向伺服器載入 */
+/**
+ * 優先用本機縮圖 (不需要網路、立刻顯示)，沒有才向伺服器載入。
+ * 完全沒有照片時不佔位（例如還沒拍餐後照），避免在窄螢幕上白白吃掉寬度。
+ */
 function MealPhoto({ thumb, photoId, alt }: { thumb: string | null; photoId?: string; alt: string }) {
   if (thumb) return <img src={thumb} alt={alt} />;
   if (photoId) return <AuthedImage photoId={photoId} alt={alt} />;
   return null;
 }
 
+/**
+ * 歷史紀錄。這一頁本質上是一份會越來越長的清單，所以是全 App 唯一需要滑動的頁面；
+ * 每一列刻意做得矮而字大，一個畫面大約能看到 4~5 筆。
+ */
 export function HistoryPage() {
-  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const showToast = useToastStore((s) => s.show);
   const { meals, loading, offline } = useMealViews();
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
-  const confirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(
-    () => () => {
-      if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current);
-    },
-    []
-  );
-
-  async function handleDeleteClick(meal: MealView, e: MouseEvent) {
-    e.stopPropagation();
-    if (confirmingId !== meal.id) {
-      setConfirmingId(meal.id);
-      if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current);
-      confirmTimeoutRef.current = setTimeout(() => setConfirmingId(null), 4000);
-      return;
-    }
-    if (confirmTimeoutRef.current) clearTimeout(confirmTimeoutRef.current);
-    setConfirmingId(null);
+  async function handleDelete(meal: MealView) {
     if (!user) return;
+    const label = MEAL_TYPE_LABEL[meal.mealType];
+    const when = new Date(meal.preMealAt).toLocaleDateString("zh-TW");
+    if (!window.confirm(`要刪除「${when} ${label}」這筆紀錄嗎？`)) return;
     try {
       // 離線也能刪：畫面上立刻消失，連上網路後才通知伺服器 (跟線上一樣是軟刪除)
       await requestRemove({ userId: user.id, mealId: meal.id, serverMeal: meal });
@@ -74,15 +57,14 @@ export function HistoryPage() {
     }
   }
 
-  async function handleRetry(mealId: string, e: MouseEvent) {
-    e.stopPropagation();
+  async function handleRetry(mealId: string) {
     await retryFailedMeal(mealId);
     void requestSync({ force: true });
+    showToast("重新上傳中…");
   }
 
-  async function handleDiscard(mealId: string, e: MouseEvent) {
-    e.stopPropagation();
-    if (!window.confirm("確定要捨棄這筆上傳失敗的紀錄嗎？捨棄後無法復原。")) return;
+  async function handleDiscard(mealId: string) {
+    if (!window.confirm("要捨棄這筆上傳失敗的紀錄嗎？捨棄後無法復原。")) return;
     await discardFailedMeal(mealId);
     showToast("已捨棄");
   }
@@ -90,80 +72,87 @@ export function HistoryPage() {
   return (
     <div className="app-shell">
       <div className="top-bar">
-        <div style={{ fontSize: 18, fontWeight: 700 }}>我的紀錄</div>
+        <h1 className="page-title">我的紀錄</h1>
       </div>
+
       <div className="page">
         <SyncStatusBar offline={offline} />
-        {loading && <p style={{ color: "var(--color-text-muted)" }}>載入中...</p>}
+
+        {loading && <p className="page-hint">載入中…</p>}
         {!loading && meals.length === 0 && (
-          <p style={{ color: "var(--color-text-muted)", textAlign: "center", marginTop: 40 }}>
-            還沒有任何紀錄，去首頁拍下第一餐吧！
+          <p className="page-hint" style={{ textAlign: "center", marginTop: 32 }}>
+            還沒有任何紀錄，
+            <br />
+            回首頁拍下第一餐吧！
           </p>
         )}
-        {meals.map((meal) => {
-          const pre = meal.photos?.find((p) => p.phase === "PRE_MEAL");
-          const post = meal.photos?.find((p) => p.phase === "POST_MEAL");
-          const status = STATUS_LABEL[meal.status];
-          return (
-            <div
-              key={meal.id}
-              className="card"
-              style={{ marginBottom: 10, cursor: meal.status === "AWAITING_POST_PHOTO" ? "pointer" : "default" }}
-              onClick={() => meal.status === "AWAITING_POST_PHOTO" && navigate(`/meal/${meal.id}/post-meal`)}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <span style={{ fontWeight: 700 }}>{MEAL_TYPE_LABEL[meal.mealType]}</span>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {meal.sync === "pending" && <span className="tag">☁️ 待上傳</span>}
-                  {meal.sync === "failed" && <span className="tag tag-failed">⚠️ 上傳失敗</span>}
-                  <span className={status.className}>{status.text}</span>
-                  {meal.sync !== "failed" && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      style={{
-                        padding: "4px 10px",
-                        fontSize: 12,
-                        color: confirmingId === meal.id ? "var(--color-danger)" : "var(--color-text-muted)",
-                        fontWeight: confirmingId === meal.id ? 700 : 400,
-                      }}
-                      onClick={(e) => handleDeleteClick(meal, e)}
-                    >
-                      {confirmingId === meal.id ? "確定刪除？" : "刪除"}
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="meal-card">
-                <div className="meal-photos">
+
+        <div className="record-list">
+          {meals.map((meal) => {
+            const pre = meal.photos?.find((p) => p.phase === "PRE_MEAL");
+            const post = meal.photos?.find((p) => p.phase === "POST_MEAL");
+            const waiting = meal.status === "AWAITING_POST_PHOTO";
+            return (
+              <div key={meal.id} className="record">
+                <div className="record-thumbs">
                   <MealPhoto thumb={meal.preThumbDataUrl} photoId={pre?.id} alt="餐前" />
                   <MealPhoto thumb={meal.postThumbDataUrl} photoId={post?.id} alt="餐後" />
                 </div>
-                <div style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
-                  <div>{new Date(meal.preMealAt).toLocaleString("zh-TW")}</div>
-                  <div>用餐時長：{formatDuration(meal.mealDurationSeconds)}</div>
-                </div>
-              </div>
-              {meal.notes && <p style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}>{meal.notes}</p>}
-              {meal.sync === "failed" && (
-                <div style={{ marginTop: 10 }}>
-                  <p className="error-text" style={{ marginTop: 0 }}>
-                    {meal.failureMessage ?? "上傳失敗"}
-                  </p>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button type="button" className="sync-bar-btn" onClick={(e) => handleRetry(meal.id, e)}>
-                      重試上傳
-                    </button>
-                    <button type="button" className="sync-bar-btn" onClick={(e) => handleDiscard(meal.id, e)}>
-                      捨棄這筆
-                    </button>
+
+                <div className="record-body">
+                  <div className="record-title">{MEAL_TYPE_LABEL[meal.mealType]}</div>
+                  <div className="record-meta">
+                    {new Date(meal.preMealAt).toLocaleString("zh-TW", {
+                      month: "numeric",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
                   </div>
+                  {meal.status === "COMPLETED" && (
+                    <div className="record-meta">吃了 {formatDuration(meal.mealDurationSeconds)}</div>
+                  )}
+                  {/* 標籤放在自己一行：窄螢幕上跟標題同一行會被擠成一字一行 */}
+                  <div className="record-tags">
+                    {meal.status === "ABANDONED" && <span className="tag">已放棄</span>}
+                    {waiting && <span className="tag tag-waiting">待補餐後照</span>}
+                    {meal.sync === "pending" && <span className="tag">☁️ 待上傳</span>}
+                    {meal.sync === "failed" && <span className="tag tag-failed">⚠️ 上傳失敗</span>}
+                  </div>
+
+                  {meal.sync === "failed" && (
+                    <>
+                      <p className="error-text" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>
+                        {meal.failureMessage ?? "上傳失敗"}
+                      </p>
+                      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                        <button type="button" className="sync-bar-btn" onClick={() => handleRetry(meal.id)}>
+                          重試
+                        </button>
+                        <button type="button" className="sync-bar-btn" onClick={() => handleDiscard(meal.id)}>
+                          捨棄
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+
+                {meal.sync !== "failed" && (
+                  <button
+                    type="button"
+                    className="icon-btn danger"
+                    aria-label="刪除"
+                    onClick={() => handleDelete(meal)}
+                  >
+                    🗑️
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
+
       <Toast />
       <BottomNav />
     </div>

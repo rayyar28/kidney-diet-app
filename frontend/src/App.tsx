@@ -9,6 +9,7 @@ import { NewMealPage } from "./pages/NewMealPage";
 import { PostMealPage } from "./pages/PostMealPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { HealthProfilePage } from "./pages/HealthProfilePage";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -65,6 +66,14 @@ export default function App() {
         element={
           <RequireAuth>
             <ProfilePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/profile/health"
+        element={
+          <RequireAuth>
+            <HealthProfilePage />
           </RequireAuth>
         }
       />

@@ -1,21 +1,24 @@
 import { useEffect, useState } from "react";
 
-function format(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  if (m < 60) return `${m} 分 ${s.toString().padStart(2, "0")} 秒`;
-  const h = Math.floor(m / 60);
-  return `${h} 時 ${(m % 60).toString().padStart(2, "0")} 分`;
-}
-
+/**
+ * 顯示「餐前照拍了多久」。刻意只顯示到分鐘：跳動的秒數對年長使用者是干擾，
+ * 而且用餐時長本來就不需要秒級精度（真正的精確時間是照片的時間戳記）。
+ */
 export function ElapsedTimer({ since }: { since: string }) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
   }, []);
 
-  const seconds = Math.max(0, Math.floor((now - new Date(since).getTime()) / 1000));
-  return <span className="elapsed">已經過 {format(seconds)}</span>;
+  const minutes = Math.max(0, Math.floor((now - new Date(since).getTime()) / 60_000));
+  if (minutes < 1) return <span className="elapsed">剛剛拍的</span>;
+  if (minutes < 60) return <span className="elapsed">已經過 {minutes} 分鐘</span>;
+  const h = Math.floor(minutes / 60);
+  return (
+    <span className="elapsed">
+      已經過 {h} 小時 {minutes % 60} 分
+    </span>
+  );
 }

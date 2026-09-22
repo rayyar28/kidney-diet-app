@@ -16,19 +16,24 @@ const MEAL_TYPE_LABEL: Record<string, string> = {
   SNACK: "點心",
 };
 
+/**
+ * 首頁只做一件事：告訴病人「現在該按哪裡」。
+ * 有還沒拍餐後照的紀錄 → 整個畫面主體就是那顆「拍餐後照」大按鈕；
+ * 沒有的話 → 就是「開始記錄一餐」大按鈕。其餘資訊（徽章牆等）都在其他頁。
+ */
 export function DashboardPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const showToast = useToastStore((s) => s.show);
-  const { meals, summary, loading, offline } = useMealViews();
+  const { meals, summary, offline } = useMealViews();
 
   const pending = meals.filter((m) => m.status === "AWAITING_POST_PHOTO");
+  const current = pending[0];
 
-  async function abandon(mealId: string) {
-    const meal = meals.find((m) => m.id === mealId);
-    if (!user || !meal) return;
+  async function abandon() {
+    if (!user || !current) return;
     try {
-      await requestAbandon({ userId: user.id, mealId, serverMeal: meal });
+      await requestAbandon({ userId: user.id, mealId: current.id, serverMeal: current });
       showToast("已放棄這筆紀錄");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "操作失敗，請再試一次");
@@ -36,94 +41,72 @@ export function DashboardPage() {
   }
 
   const encouragement = pickEncouragement(summary?.currentStreakDays ?? 0);
-  const recentBadges = (summary?.badges ?? []).filter((b) => b.earned).slice(-4).reverse();
 
   return (
     <div className="app-shell">
       <div className="top-bar">
         <div>
-          <div style={{ fontSize: 13, color: "var(--color-text-muted)" }}>哈囉，{user?.displayName ?? "朋友"}</div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>今天也要好好吃飯 🍚</div>
+          <div className="page-hint">哈囉</div>
+          <div className="page-title">{user?.displayName ?? "朋友"}</div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <span className="pill pill-accent">✨ {summary?.totalPoints ?? 0}</span>
-          <span className="pill pill-primary">
-            <span className="streak-flame" style={{ fontSize: 16 }}>
-              🔥
-            </span>
-            {summary?.currentStreakDays ?? 0}
-          </span>
+        <div className="stat-pair">
+          <div className="stat stat-accent">
+            <div className="stat-num">{summary?.totalPoints ?? 0}</div>
+            <div className="stat-label">點數</div>
+          </div>
+          <div className="stat stat-primary">
+            <div className="stat-num">{summary?.currentStreakDays ?? 0}</div>
+            <div className="stat-label">連續天</div>
+          </div>
         </div>
       </div>
 
       <div className="page">
         <SyncStatusBar offline={offline} />
 
-        <div className="encouragement-banner">
-          <div className="headline">{encouragement.headline}</div>
-          <div className="sub">{encouragement.sub}</div>
-        </div>
-
-        <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={() => navigate("/new-meal")}>
-          📸 開始記錄一餐
-        </button>
-
-        {pending.length > 0 && (
+        {current ? (
+          // 有待補餐後照時不放鼓勵語：大按鈕本身已經說了要做什麼，
+          // 多一行文字只是重複，還會在小螢幕 + 離線提示同時出現時把版面擠到需要滑動
           <>
-            <div className="section-title">進行中的用餐（{pending.length}）</div>
-            {pending.map((meal) => (
-              <div key={meal.id} className="card" style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <span className="tag tag-waiting">{MEAL_TYPE_LABEL[meal.mealType]} · 等待餐後照</span>
-                    {meal.sync === "pending" && (
-                      <span className="tag" style={{ marginLeft: 6 }}>
-                        ☁️ 待上傳
-                      </span>
-                    )}
-                    {meal.sync === "failed" && (
-                      <span className="tag tag-failed" style={{ marginLeft: 6 }}>
-                        ⚠️ 上傳失敗
-                      </span>
-                    )}
-                    <div style={{ marginTop: 6, fontSize: 13, color: "var(--color-text-muted)" }}>
-                      <ElapsedTimer since={meal.preMealAt} />
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate(`/meal/${meal.id}/post-meal`)}>
-                    拍餐後照
-                  </button>
-                  <button className="btn btn-ghost" onClick={() => abandon(meal.id)}>
-                    放棄
-                  </button>
-                </div>
+            <button
+              type="button"
+              className="hero-btn hero-accent"
+              onClick={() => navigate(`/meal/${current.id}/post-meal`)}
+            >
+              <span className="hero-icon">📷</span>
+              <span className="hero-label">拍餐後照</span>
+              <span className="hero-hint">
+                {MEAL_TYPE_LABEL[current.mealType]}· <ElapsedTimer since={current.preMealAt} />
+              </span>
+            </button>
+            {pending.length > 1 && (
+              <div className="page-hint" style={{ textAlign: "center" }}>
+                另外還有 {pending.length - 1} 筆等待餐後照，可到「紀錄」查看
               </div>
-            ))}
+            )}
           </>
-        )}
-
-        {recentBadges.length > 0 && (
+        ) : (
           <>
-            <div className="section-title">最新徽章</div>
-            <div className="badge-grid">
-              {recentBadges.map((b) => (
-                <div key={b.code} className="badge-cell">
-                  <span className="badge-emoji">{b.iconEmoji}</span>
-                  <span className="badge-name">{b.name}</span>
-                </div>
-              ))}
-            </div>
+            <div className="encourage-line">{encouragement.headline}</div>
+            <button type="button" className="hero-btn" onClick={() => navigate("/new-meal")}>
+              <span className="hero-icon">📷</span>
+              <span className="hero-label">開始記錄一餐</span>
+              <span className="hero-hint">先拍「吃之前」的樣子</span>
+            </button>
           </>
-        )}
-
-        {!loading && pending.length === 0 && (
-          <p style={{ color: "var(--color-text-muted)", fontSize: 14, marginTop: 20, textAlign: "center" }}>
-            目前沒有進行中的用餐紀錄，按上面的按鈕開始新的一餐吧！
-          </p>
         )}
       </div>
+
+      {current && (
+        <div className="page-footer">
+          <button className="btn btn-secondary" onClick={() => navigate("/new-meal")}>
+            記錄另一餐
+          </button>
+          <button className="btn btn-ghost" onClick={abandon}>
+            放棄這筆紀錄
+          </button>
+        </div>
+      )}
 
       <Toast />
       <BottomNav />

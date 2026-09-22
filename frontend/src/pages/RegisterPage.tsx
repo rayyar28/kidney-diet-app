@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, ApiError } from "../api/client";
+import { api, ApiError, NetworkError } from "../api/client";
 import { useAuthStore } from "../store/auth";
 import type { AuthUser } from "../api/types";
 
@@ -26,7 +26,8 @@ export function RegisterPage() {
       setSession(data.user, data.accessToken, data.refreshToken);
       navigate("/");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "註冊失敗，請稍後再試");
+      if (err instanceof NetworkError) setError("目前沒有網路，請連上網路再註冊");
+      else setError(err instanceof ApiError ? err.message : "註冊失敗，請稍後再試");
     } finally {
       setLoading(false);
     }
@@ -34,37 +35,51 @@ export function RegisterPage() {
 
   return (
     <div className="app-shell">
-      <div className="page center-col" style={{ justifyContent: "center", minHeight: "100%" }}>
-        <div style={{ fontSize: 40 }}>🌱</div>
-        <h1 style={{ margin: 0, fontSize: 22 }}>建立帳號</h1>
-        <form onSubmit={onSubmit} style={{ width: "100%", marginTop: 12, textAlign: "left" }}>
-          <div className="field">
-            <label className="label">暱稱</label>
-            <input className="input" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-          </div>
-          <div className="field">
-            <label className="label">Email</label>
-            <input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div className="field">
-            <label className="label">密碼（至少 8 個字元）</label>
-            <input
-              className="input"
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          {error && <p className="error-text">{error}</p>}
-          <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? "建立中..." : "註冊並開始使用"}
-          </button>
-        </form>
-        <p style={{ fontSize: 14, color: "var(--color-text-muted)" }}>
-          已經有帳號？ <Link to="/login">前往登入</Link>
-        </p>
+      <div className="top-bar">
+        <div>
+          <h1 className="page-title">建立新帳號</h1>
+          <p className="page-hint">只需要三個欄位</p>
+        </div>
+      </div>
+
+      <form id="register-form" className="page" onSubmit={onSubmit}>
+        <div className="field">
+          <label className="label">您的稱呼</label>
+          <input className="input" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        </div>
+        <div className="field">
+          <label className="label">Email</label>
+          <input
+            className="input"
+            type="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label className="label">密碼（至少 8 個字）</label>
+          <input
+            className="input"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
+        {error && <p className="error-text">{error}</p>}
+      </form>
+
+      <div className="page-footer">
+        <button className="btn btn-primary" type="submit" form="register-form" disabled={loading}>
+          {loading ? "建立中…" : "建立帳號"}
+        </button>
+        <Link to="/login" className="btn btn-ghost" style={{ textDecoration: "none" }}>
+          已經有帳號？前往登入
+        </Link>
       </div>
     </div>
   );

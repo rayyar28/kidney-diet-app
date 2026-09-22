@@ -1,3 +1,13 @@
+/* ---------------------------------------------------------------------------
+ * 介面設計原則（使用者是年長的腎臟病人）：
+ * 1. 字體大：正文 18px 起跳，按鈕 21px，數字 34px。不使用 14px 以下的字。
+ * 2. 不用滑動：每個畫面都設計成在小螢幕手機 (375x667) 內就能完整顯示，
+ *    主要操作固定在畫面底部。為了安全仍保留 overflow-y: auto，
+ *    萬一使用者把系統字體調到特大，內容也不會被裁掉。
+ * 3. 用圖示代替文字說明：拍照=大相機、相簿=大圖冊，一眼就懂要按哪裡。
+ * 4. 一個畫面只做一件事：次要資訊 (徽章牆、健康資料設定) 移到各自的頁面。
+ * --------------------------------------------------------------------------- */
+
 :root {
   color-scheme: light;
   --color-bg: #f6f3ec;
@@ -7,12 +17,19 @@
   --color-accent: #e0932c;
   --color-danger: #c1503f;
   --color-text: #2b2b28;
-  --color-text-muted: #6f6b62;
+  --color-text-muted: #5f5b53;
   --color-border: #e6e1d6;
   --radius-lg: 20px;
   --radius-md: 14px;
   --radius-sm: 8px;
   --shadow-card: 0 4px 16px rgba(43, 43, 40, 0.08);
+
+  /* 字級 */
+  --fs-sm: 16px;
+  --fs-base: 18px;
+  --fs-lg: 21px;
+  --fs-xl: 26px;
+  --fs-num: 34px;
 }
 
 * {
@@ -28,6 +45,8 @@ body,
 body {
   margin: 0;
   font-family: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  font-size: var(--fs-base);
+  line-height: 1.5;
   background: var(--color-bg);
   color: var(--color-text);
   -webkit-tap-highlight-color: transparent;
@@ -37,28 +56,84 @@ button {
   font-family: inherit;
 }
 
+/* ----------------------------- 版面骨架 ----------------------------- */
+
 .app-shell {
   max-width: 480px;
+  height: 100vh;
+  height: 100dvh; /* 手機瀏覽器網址列會伸縮，dvh 才是真正可見高度 */
   margin: 0 auto;
-  min-height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
   position: relative;
+  overflow: hidden;
 }
 
+/* 畫面主體。flex 直排，min-height:0 讓內部的 flex:1 區塊能正確壓縮 */
 .page {
   flex: 1;
-  padding: 20px 20px 96px;
+  min-height: 0;
   overflow-y: auto;
+  padding: 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 置中型畫面（登入、完成慶祝頁） */
+.page-center {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+/* 主要操作固定在畫面最下方，永遠看得到、不用滑動 */
+.page-footer {
+  flex-shrink: 0;
+  padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--color-bg);
+  border-top: 1px solid var(--color-border);
+}
+
+.top-bar {
+  flex-shrink: 0;
+  padding: 14px 18px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 700;
+}
+
+.page-hint {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+}
+
+.section-title {
+  font-size: var(--fs-base);
+  font-weight: 700;
+  margin: 0;
 }
 
 .card {
   background: var(--color-surface);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
-  padding: 18px;
+  padding: 16px;
 }
+
+/* ----------------------------- 按鈕 ----------------------------- */
 
 .btn {
   display: inline-flex;
@@ -67,9 +142,10 @@ button {
   gap: 8px;
   border: none;
   border-radius: var(--radius-md);
-  padding: 14px 20px;
-  font-size: 16px;
-  font-weight: 600;
+  padding: 16px 20px;
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  min-height: 56px; /* 手指好按 */
   cursor: pointer;
   transition: transform 0.12s ease, opacity 0.12s ease;
 }
@@ -92,22 +168,170 @@ button {
 .btn-secondary {
   background: var(--color-surface);
   color: var(--color-primary);
-  border: 1.5px solid var(--color-primary);
+  border: 2px solid var(--color-primary);
   width: 100%;
 }
 
 .btn-ghost {
   background: transparent;
   color: var(--color-text-muted);
+  font-weight: 600;
+  min-height: 48px;
 }
+
+/*
+ * 畫面上最重要的那一個動作：整塊大面積 + 大圖示。
+ * 年長使用者不需要讀完文字就知道「按這裡拍照」。
+ */
+.hero-btn {
+  flex: 1;
+  min-height: 156px;
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary);
+  color: white;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  transition: transform 0.12s ease;
+}
+
+.hero-btn:active {
+  transform: scale(0.98);
+}
+
+.hero-btn.hero-accent {
+  background: var(--color-accent);
+}
+
+.hero-icon {
+  font-size: 68px;
+  line-height: 1.1;
+}
+
+.hero-label {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+}
+
+.hero-hint {
+  font-size: var(--fs-sm);
+  opacity: 0.9;
+}
+
+/* ----------------------------- 拍照 / 相簿 ----------------------------- */
+
+/*
+ * 拍照與相簿並排的兩個大圖示磚。刻意只放圖示 + 兩個字，
+ * 不寫「從相簿選擇照片」這種長句子。
+ */
+/* 會長高填滿剩餘空間：螢幕越大，按鈕就越大越好按（上限避免在平板上誇張） */
+.capture-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  flex: 1;
+  min-height: 132px;
+  max-height: 200px;
+}
+
+.capture-tile {
+  background: var(--color-surface);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-lg);
+  color: var(--color-primary);
+  padding: 18px 10px;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.capture-tile:active {
+  transform: scale(0.97);
+}
+
+.capture-tile:disabled {
+  opacity: 0.5;
+}
+
+.capture-tile .tile-icon {
+  font-size: 60px;
+  line-height: 1.1;
+}
+
+.capture-tile .tile-label {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+/* 拍完後的預覽：固定高度，不再吃掉整個畫面 */
+.shot-preview {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-border);
+  flex: 1;
+  min-height: 168px;
+  max-height: 240px;
+}
+
+.shot-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.shot-preview .shot-done {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(47, 111, 94, 0.92);
+  color: white;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+
+.shot-preview .shot-retake {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--color-primary);
+  border: none;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+/* ----------------------------- 表單 ----------------------------- */
 
 .input {
   width: 100%;
-  padding: 12px 14px;
+  padding: 14px;
   border-radius: var(--radius-md);
-  border: 1.5px solid var(--color-border);
-  font-size: 15px;
+  border: 2px solid var(--color-border);
+  font-size: var(--fs-base);
+  min-height: 54px;
   background: var(--color-surface);
+  color: var(--color-text);
 }
 
 .input:focus {
@@ -116,88 +340,250 @@ button {
 }
 
 .label {
-  font-size: 13px;
-  color: var(--color-text-muted);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--color-text);
   margin-bottom: 6px;
   display: block;
 }
 
 .field {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .error-text {
   color: var(--color-danger);
-  font-size: 13px;
-  margin-top: 6px;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  margin: 0;
 }
 
-.bottom-nav {
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  display: flex;
+/* 餐別選擇：四個並排，圖示大、字大 */
+.meal-type-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.meal-type-btn {
+  padding: 12px 2px;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--color-border);
   background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
-}
-
-.bottom-nav a {
-  flex: 1;
+  color: var(--color-text);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  min-height: 84px;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  text-decoration: none;
-  color: var(--color-text-muted);
-  font-size: 12px;
-  padding: 6px 0;
-  border-radius: var(--radius-sm);
+  justify-content: center;
+  gap: 4px;
 }
 
-.bottom-nav a.active {
+.meal-type-btn .type-icon {
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.meal-type-btn.selected {
+  border-color: var(--color-primary);
   color: var(--color-primary);
-  font-weight: 600;
+  background: rgba(47, 111, 94, 0.1);
 }
 
-.bottom-nav .icon {
-  font-size: 20px;
-}
+/* ----------------------------- 數字 / 狀態 ----------------------------- */
 
-.top-bar {
-  padding: 18px 20px 6px;
+.stat-pair {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.stat {
   background: var(--color-surface);
-  border-radius: 999px;
-  padding: 6px 12px;
-  font-weight: 600;
-  font-size: 14px;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
+  padding: 6px 14px;
+  text-align: center;
+  min-width: 78px;
 }
 
-.pill-accent {
+.stat .stat-num {
+  font-size: var(--fs-num);
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat .stat-label {
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+}
+
+.stat-accent .stat-num {
   color: var(--color-accent);
 }
 
-.pill-primary {
+.stat-primary .stat-num {
   color: var(--color-primary);
 }
 
-.section-title {
-  font-size: 15px;
+.tag {
+  display: inline-block;
+  font-size: var(--fs-sm);
   font-weight: 700;
-  margin: 22px 0 10px;
-  color: var(--color-text);
+  padding: 5px 12px;
+  border-radius: 999px;
+  white-space: nowrap; /* 窄螢幕上不要被擠成一個字一行 */
+  background: rgba(47, 111, 94, 0.1);
+  color: var(--color-primary);
 }
+
+.tag-waiting {
+  background: rgba(224, 147, 44, 0.18);
+  color: #9a6512;
+}
+
+.tag-failed {
+  background: rgba(193, 80, 63, 0.14);
+  color: var(--color-danger);
+}
+
+.encourage-line {
+  flex-shrink: 0;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--color-primary-dark);
+  background: rgba(47, 111, 94, 0.08);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+
+.elapsed {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------- 同步狀態 ----------------------------- */
+
+.sync-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(224, 147, 44, 0.16);
+  color: var(--color-text);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.sync-bar-error {
+  background: rgba(193, 80, 63, 0.12);
+}
+
+.sync-bar-btn {
+  flex-shrink: 0;
+  border: 2px solid var(--color-primary);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+/* ----------------------------- 紀錄列表 ----------------------------- */
+
+/* 紀錄頁是「一整串歷史資料」，本質上需要滑動，但每一列都做得緊湊、字大 */
+.record-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 -2px;
+  padding: 0 2px;
+}
+
+.record {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.record-thumbs {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.record-thumbs img,
+.record-thumbs .thumb-empty {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--color-border);
+  display: block;
+}
+
+.record-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.record-title {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.record-meta {
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.record-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.record-tags:empty {
+  display: none;
+}
+
+.icon-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  font-size: 26px;
+  line-height: 1;
+  padding: 10px;
+  min-width: 48px;
+  min-height: 48px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+}
+
+.icon-btn.danger {
+  color: var(--color-danger);
+}
+
+/* ----------------------------- 徽章 ----------------------------- */
 
 .badge-grid {
   display: grid;
@@ -223,71 +609,52 @@ button {
 }
 
 .badge-emoji {
-  font-size: 26px;
+  font-size: 30px;
+  line-height: 1.1;
 }
 
 .badge-name {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  line-height: 1.3;
-}
-
-.meal-card {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.meal-card img {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-sm);
-  object-fit: cover;
-  background: var(--color-border);
-}
-
-.meal-photos {
-  display: flex;
-  gap: 8px;
-}
-
-.tag {
-  display: inline-block;
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(47, 111, 94, 0.1);
-  color: var(--color-primary);
-  font-weight: 600;
-}
-
-.tag-waiting {
-  background: rgba(224, 147, 44, 0.15);
-  color: var(--color-accent);
-}
-
-.encouragement-banner {
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
-  color: white;
-  border-radius: var(--radius-lg);
-  padding: 18px;
-  margin-bottom: 8px;
-}
-
-.encouragement-banner .headline {
-  font-size: 16px;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.encouragement-banner .sub {
   font-size: 13px;
-  opacity: 0.85;
+  color: var(--color-text-muted);
+  line-height: 1.25;
 }
 
-.streak-flame {
-  font-size: 32px;
+/* ----------------------------- 底部導覽 ----------------------------- */
+
+.bottom-nav {
+  flex-shrink: 0;
+  display: flex;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
 }
+
+.bottom-nav a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-decoration: none;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  padding: 6px 0;
+  border-radius: var(--radius-sm);
+  min-height: 56px;
+  justify-content: center;
+}
+
+.bottom-nav a.active {
+  color: var(--color-primary);
+}
+
+.bottom-nav .icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+/* ----------------------------- 其他 ----------------------------- */
 
 .center-col {
   display: flex;
@@ -297,63 +664,20 @@ button {
   gap: 10px;
 }
 
-.meal-type-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-.meal-type-btn {
-  padding: 18px 10px;
-  border-radius: var(--radius-md);
-  border: 1.5px solid var(--color-border);
-  background: var(--color-surface);
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.meal-type-btn.selected {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: rgba(47, 111, 94, 0.08);
-}
-
-.camera-preview {
-  width: 100%;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  background: var(--color-border);
-  aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-muted);
-}
-
-.camera-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .toast {
   position: fixed;
-  bottom: 90px;
+  bottom: 96px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--color-text);
   color: white;
-  padding: 12px 18px;
-  border-radius: 999px;
-  font-size: 14px;
+  padding: 14px 20px;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-base);
+  font-weight: 600;
   box-shadow: var(--shadow-card);
   z-index: 50;
-  max-width: 90%;
+  max-width: 92%;
   text-align: center;
 }
 
@@ -372,44 +696,7 @@ button {
   }
 }
 
-.elapsed {
-  font-variant-numeric: tabular-nums;
-}
-
-.sync-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: rgba(224, 147, 44, 0.14);
-  color: var(--color-text);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  margin-bottom: 6px;
-}
-
-.sync-bar-error {
-  background: rgba(193, 80, 63, 0.12);
-}
-
-.sync-bar-btn {
-  flex-shrink: 0;
-  border: 1.5px solid var(--color-primary);
-  background: var(--color-surface);
-  color: var(--color-primary);
-  border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.tag-failed {
-  background: rgba(193, 80, 63, 0.14);
-  color: var(--color-danger);
-}
+/* ----------------------------- 全螢幕即時相機 ----------------------------- */
 
 .camera-overlay {
   position: fixed;
@@ -432,13 +719,13 @@ button {
   position: absolute;
   top: max(16px, env(safe-area-inset-top));
   left: 16px;
-  width: 40px;
-  height: 40px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.5);
   color: white;
   border: none;
-  font-size: 18px;
+  font-size: 24px;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -448,7 +735,7 @@ button {
 
 .camera-overlay-shutter-wrap {
   position: absolute;
-  bottom: max(28px, env(safe-area-inset-bottom));
+  bottom: max(32px, env(safe-area-inset-bottom));
   left: 0;
   right: 0;
   display: flex;
@@ -456,11 +743,11 @@ button {
 }
 
 .camera-overlay-shutter {
-  width: 72px;
-  height: 72px;
+  width: 88px;
+  height: 88px;
   border-radius: 50%;
   background: white;
-  border: 4px solid rgba(255, 255, 255, 0.5);
+  border: 5px solid rgba(255, 255, 255, 0.5);
   cursor: pointer;
   padding: 0;
 }

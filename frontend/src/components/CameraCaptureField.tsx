@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 interface Props {
+  /** 用在提示文字上，例如「餐前照片」 */
   label: string;
   onCapture: (file: File, capturedAt: Date) => void;
 }
 
 /**
+ * 拍照 / 選相簿。介面刻意只有兩個大圖示磚（相機、圖冊），
+ * 年長使用者不必讀文字就知道要按哪裡；拍好之後換成固定高度的預覽，
+ * 不會把整個畫面吃掉（避免需要滑動）。
+ *
  * 拍照流程：
- *   1. 優先用 getUserMedia 開一個「即時相機預覽」全螢幕畫面，點擊快門立刻擷取當前畫面
- *      —— 這是為了避免手機瀏覽器把 `capture="environment"` 只當成提示，跳出「相機/相簿/
- *      檔案」選擇清單而不是直接開相機，導致拍餐前/餐後照片時不夠即時。
- *   2. 如果裝置不支援 getUserMedia、使用者拒絕權限、或找不到相機（例如桌機瀏覽器、
- *      非 HTTPS/localhost 的連線），才退回原本的 `<input type="file" capture="environment">`
- *      做法，讓功能在任何環境下都至少能用。
- * capturedAt 一律用「使用者按下快門/選好照片的當下時間」當作拍攝時間的近似值
+ *   1. 優先用 getUserMedia 開全螢幕即時相機預覽，按快門立刻擷取畫面
+ *      —— 手機瀏覽器常把 `capture="environment"` 只當成提示，會先跳出
+ *      「相機/相簿/檔案」選單，拍餐前/餐後照時不夠即時。
+ *   2. 不支援 getUserMedia、使用者拒絕權限、或找不到相機（桌機、非 HTTPS）
+ *      才退回 `<input type="file" capture="environment">`，功能在任何環境都能用。
+ * capturedAt 一律用「按下快門 / 選好照片的當下時間」當作拍攝時間的近似值
  * (瀏覽器沙盒無法取得作業系統相機的精確拍攝時間戳記)。
  */
 export function CameraCaptureField({ label, onCapture }: Props) {
@@ -21,7 +25,7 @@ export function CameraCaptureField({ label, onCapture }: Props) {
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  // ImageCapture 目前不在標準 TS DOM 型別定義裡（實驗性 API），用 any 存取
+  // ImageCapture 目前不在標準 TS DOM 型別定義裡（實驗性 API）
   const imageCaptureRef = useRef<{ takePhoto: () => Promise<Blob> } | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [liveOpen, setLiveOpen] = useState(false);
@@ -67,7 +71,11 @@ export function CameraCaptureField({ label, onCapture }: Props) {
       // ImageCapture 可以直接向相機要一張真正的高解析度靜態照片，畫質遠高於
       // 從 <video> 畫面截圖；目前只有 Chromium 系列瀏覽器支援，iOS Safari 沒有，
       // 沒有的話下面 capturePhoto() 會自動退回截圖方式。
-      const ImageCaptureCtor = (window as unknown as { ImageCapture?: new (track: MediaStreamTrack) => { takePhoto: () => Promise<Blob> } }).ImageCapture;
+      const ImageCaptureCtor = (
+        window as unknown as {
+          ImageCapture?: new (track: MediaStreamTrack) => { takePhoto: () => Promise<Blob> };
+        }
+      ).ImageCapture;
       if (ImageCaptureCtor) {
         try {
           imageCaptureRef.current = new ImageCaptureCtor(stream.getVideoTracks()[0]);
@@ -103,7 +111,10 @@ export function CameraCaptureField({ label, onCapture }: Props) {
     if (imageCaptureRef.current) {
       try {
         const blob = await imageCaptureRef.current.takePhoto();
-        finishCapture(new File([blob], `capture-${capturedAt.getTime()}.jpg`, { type: blob.type || "image/jpeg" }), capturedAt);
+        finishCapture(
+          new File([blob], `capture-${capturedAt.getTime()}.jpg`, { type: blob.type || "image/jpeg" }),
+          capturedAt
+        );
         return;
       } catch {
         // takePhoto 失敗（部分裝置的相機不支援拍照模式）：退回下面的畫面截圖
@@ -127,31 +138,50 @@ export function CameraCaptureField({ label, onCapture }: Props) {
     );
   }
 
-  // 相簿選擇的照片，實際拍攝時間可能早於選取當下（例如挑一張舊照片），
-  // 這裡的 capturedAt 只能近似成「選取的當下時間」，跟拍照當下擷取的精確度不同。
+  // 相簿選的照片，實際拍攝時間可能早於選取當下（例如挑一張舊照片），
+  // 這裡的 capturedAt 只能近似成「選取的當下時間」。
   function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const capturedAt = new Date();
+    finishCapture(file, new Date());
+    e.target.value = ""; // 讓同一張照片可以再選一次
+  }
+
+  function retake() {
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old);
-      return URL.createObjectURL(file);
+      return null;
     });
-    onCapture(file, capturedAt);
   }
 
   return (
-    <div>
-      <div className="camera-preview">
-        {previewUrl ? (
+    <>
+      {previewUrl ? (
+        <div className="shot-preview">
           <img src={previewUrl} alt={label} />
-        ) : (
-          <div className="center-col">
-            <span style={{ fontSize: 32 }}>📷</span>
-            <span>{starting ? "正在啟動相機..." : label}</span>
-          </div>
-        )}
-      </div>
+          <span className="shot-done">✓ 已拍好</span>
+          <button type="button" className="shot-retake" onClick={retake}>
+            重拍
+          </button>
+        </div>
+      ) : (
+        <div className="capture-tiles">
+          <button type="button" className="capture-tile" onClick={openCamera} disabled={starting}>
+            <span className="tile-icon">📷</span>
+            <span className="tile-label">{starting ? "開啟中" : "拍照"}</span>
+          </button>
+          <button
+            type="button"
+            className="capture-tile"
+            onClick={() => galleryInputRef.current?.click()}
+            disabled={starting}
+          >
+            <span className="tile-icon">🖼️</span>
+            <span className="tile-label">相簿</span>
+          </button>
+        </div>
+      )}
+
       <input
         ref={inputRef}
         type="file"
@@ -167,14 +197,6 @@ export function CameraCaptureField({ label, onCapture }: Props) {
         style={{ display: "none" }}
         onChange={handleFileChange}
       />
-      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-        <button type="button" className="btn btn-secondary" onClick={openCamera} disabled={starting}>
-          {previewUrl ? "重新拍攝" : "拍照"}
-        </button>
-        <button type="button" className="btn btn-secondary" onClick={() => galleryInputRef.current?.click()} disabled={starting}>
-          從相簿選擇
-        </button>
-      </div>
 
       {liveOpen && (
         <div className="camera-overlay">
@@ -187,6 +209,6 @@ export function CameraCaptureField({ label, onCapture }: Props) {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
