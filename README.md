@@ -15,9 +15,11 @@
 | 離線使用、有網路自動補傳 | ✅ 完成 |
 | 遊戲化（點數 / 連續天數 / 13 種徽章） | ✅ 完成 |
 | 為年長使用者設計的介面 | ✅ 完成 |
+| 照片壓縮（含 GPS 去識別化） | ✅ 完成 |
+| **Android APK（試用版）** | ✅ 可以打包並安裝，見下方「打包 Android APK」 |
 | 正式環境部署（Render + Neon + R2 + Pages） | 📝 設定與手冊已就緒，尚未實際開通帳號 |
 | 食物辨識模型 | ⏳ 尚未選定模型（資料庫已預留） |
-| Android APK / iOS | ⏳ 規劃中（先 Android 直接發 APK） |
+| iOS | ⏳ 尚未開始（同一份程式碼，需要 Mac 與 Apple 開發者帳號） |
 
 ## 文件
 
@@ -32,6 +34,7 @@
 ## 技術棧
 
 - **前端**：React + TypeScript + Vite，做成 PWA（可以「加到主畫面」，不用上架）
+- **Android App**：Capacitor 把同一份前端包成 APK（`frontend/android/`），不是另外寫的程式
 - **離線層**：IndexedDB 本機儲存 + 背景同步佇列（`frontend/src/offline/`）
 - **後端**：Node.js + Express + TypeScript
 - **資料庫**：PostgreSQL，透過 Prisma ORM 管理
@@ -82,6 +85,50 @@ PostgreSQL、後端、前端：
 cloudflared tunnel --url http://localhost:5173
 ```
 
+## 打包 Android APK
+
+環境需求：**JDK 17** 與 **Android SDK**（platform-tools、platforms;android-35、build-tools;35.0.0）。
+不需要安裝 Android Studio，用 command-line tools 即可。
+
+```powershell
+cd frontend
+npm run build          # 先產生網頁資源
+npx cap copy android   # 複製到 Android 專案
+cd android
+./gradlew assembleDebug
+# 產出：frontend/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+> **⚠ 專案路徑含中文會讓建置失敗。**
+> Android 的建置工具不接受非 ASCII 路徑。`gradle.properties` 裡已經加了
+> `android.overridePathCheck=true`，但那只跳過警告、不能解決問題——**還是要從純英文路徑執行建置**。
+> 做法是建一個目錄連結（不需要系統管理員權限、不會複製檔案）：
+> ```powershell
+> cmd /c 'mklink /J "D:\kidney-build" "D:\大學\專題\claude_app"'
+> cd D:\kidney-build\frontend\android
+> ./gradlew assembleDebug
+> ```
+> 另外 `android/local.properties` 沒有進版控（裡面是這台電腦的 SDK 路徑），
+> 換電腦要自己建一個，內容是 `sdk.dir=D:/android-sdk`（**用斜線，不要用反斜線**）。
+
+### 試用版與正式版的差別
+
+目前打包出來的是**試用版**：第一次開啟會出現「伺服器設定」畫面，讓測試者自己填後端網址。
+這是因為後端還沒有固定位置，如果把網址寫死，網址一變整包 APK 就失效。
+
+正式發給病人的版本要在建置時寫死網址（跟市面上的 App 一樣，使用者不會看到設定畫面）：
+
+```powershell
+# 在 frontend/.env.production 設定，或用環境變數
+VITE_API_BASE_URL=https://你的網域/api npm run build
+```
+
+設了之後 `needsApiBaseSetup()` 會是 false，設定畫面不會出現。
+
+> **正式版還需要自己的簽章金鑰**（`assembleRelease`）。那把金鑰**不能外流**
+> （別人可以冒名發佈更新）也**不能弄丟**（換金鑰就無法覆蓋安裝，病人得先解除安裝，
+> 而解除安裝會清掉手機裡還沒上傳的離線紀錄）。`.gitignore` 已經擋掉 `*.jks` / `*.keystore`。
+
 ## 常用指令
 
 ```powershell
@@ -118,6 +165,13 @@ cd backend; npm run prisma:migrate
 - 上傳佇列依「拍照時間」排序，確保連續天數的計算正確
 - 用餐紀錄 ID 由前端產生，網路不穩時重送不會產生重複資料或重複點數
 - 上傳失敗會明確告知並提供「重試 / 捨棄」，不會默默丟掉病人的照片
+- 登入狀態可維持的時間由 `JWT_REFRESH_EXPIRES_IN` 決定。**病人多久會連上伺服器一次，
+  就決定這個值要設多大**（洗腎病人一週三次 → 30d 夠；一般門診 2~3 個月回診一次 → 要 180d 以上）
+
+**照片壓縮**
+- 上傳前縮到最長邊 1600px、JPEG 品質 0.82：實測 4K 照片 2.76MB → 184KB（約 15 倍）
+- 目的是離線期間的手機容量：三個月不連網從約 1.6GB 降到約 110MB
+- 副作用（正面）：重新編碼會移除 EXIF，**病人住家的 GPS 座標不會被上傳**
 
 **遊戲化**
 - 點數（事件帳本，只增不改）、連續紀錄天數、13 種徽章、完成用餐的慶祝畫面
@@ -138,12 +192,14 @@ cd backend; npm run prisma:migrate
 
 ## 已知限制
 
-- **照片沒有壓縮**：離線累積多天的照片可能到數十 MB，補傳較慢也較耗流量。
 - **相簿選的照片時間不精確**：即時相機拍的是「按下快門的當下」，但從相簿挑選的
   照片只能用「選取當下的時間」近似，尚未解析 EXIF 拍攝時間。正式收案前建議補上。
-- **不解析 EXIF**：刻意的隱私考量（避免記錄到病人住家 GPS 座標），詳見
-  [DATABASE.md](docs/DATABASE.md)。
+  ⚠ 之後要做這項時，**必須在壓縮之前讀 EXIF**，因為壓縮會把 EXIF 整段移除。
+- **所有照片解析度一致**：壓縮後都是最長邊 1600px，因此無法再從收集到的資料研究
+  「照片解析度是否影響辨識準確率」。若研究上需要，得另外記錄原始尺寸（要加欄位）。
 - **完全離線冷啟動未實測**：還沒在真實手機上驗證「先開飛航模式再開 App」的情境。
+- **APK 的相機未在實機驗證**：權限與設定都正確，但開發時沒有實體 Android 裝置，
+  WebView 內的相機行為需要實機確認。
 - **iPhone 畫質較差**：高解析度靜態拍照用的 `ImageCapture` API iOS Safari 不支援，
   會退回畫面截圖。
 
