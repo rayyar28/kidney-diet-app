@@ -46,6 +46,12 @@
         「從相簿選擇」走的是系統檔案選擇器，不需要額外的媒體讀取權限。
     -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!--
+      把拍下的照片另存一份到手機相簿用的。Android 10 (API 29) 起改用 MediaStore，
+      插入自己的照片不需要任何權限，所以這條只在 Android 9 以下才需要、也只宣告到那裡為止；
+      不加 maxSdkVersion 的話新版 Android 會在安裝時顯示一個其實用不到的儲存空間權限。
+    -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
     <!-- 沒有相機的裝置也能安裝（可以只用相簿功能） -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />

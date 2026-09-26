@@ -279,6 +279,57 @@ claude_app/
 - **試用版 vs 正式版**：試用版讓使用者自己填後端網址（因為還沒有固定網址）；
   正式版用建置時的 `VITE_API_BASE_URL` 寫死，設定畫面就不會出現，跟一般 App 一樣。
 
+## 照片另存到手機相簿（Android）
+
+病人（和幫忙試用的護理師）會預期「用這個 App 拍的東西，我在相簿裡找得到」，就像用一般
+相機 App 一樣。App 自己的資料庫存的照片只在 App 裡看得到，那不是他們認知中的「存在手機裡」。
+所以**用 App 相機拍的照片會另存一份到相簿**（從相簿挑的不會，那本來就在裡面了）。
+
+### 為什麼自己寫原生外掛
+
+先試了現成的 `@capacitor-community/media`，兩個問題讓它不適用：
+
+1. 它在 Android 10 以上是寫進 `getExternalMediaDirs()`——**App 專屬**的媒體資料夾。
+   照片雖然會出現在相簿裡，但**解除安裝 App 時會被一起刪掉**。既然目的是「留給病人」，
+   這個位置就不對。
+2. 它的權限判斷要求 `WRITE_EXTERNAL_STORAGE`，而那個權限在 Android 11 之後根本不可能
+   被授予（scoped storage），Android 10~12 的使用者會卡在永遠拿不到權限。
+
+所以改成一個只有一個方法的自製外掛
+[`PhotoGalleryPlugin.java`](../frontend/android/app/src/main/java/tw/edu/project/kidneydiet/PhotoGalleryPlugin.java)：
+
+| Android 版本 | 做法 | 需要權限嗎 | 解除安裝後 |
+|---|---|---|---|
+| 10（API 29）以上 | 插入 `MediaStore`，`RELATIVE_PATH = Pictures/腎臟飲食紀錄` | **不需要** | 照片留著 |
+| 9（API 28）以下 | 直接寫進公用 `Pictures/腎臟飲食紀錄`，再通知系統掃描 | `WRITE_EXTERNAL_STORAGE` | 照片留著 |
+
+`WRITE_EXTERNAL_STORAGE` 在 manifest 裡標了 `maxSdkVersion="28"`，新版 Android 安裝時
+就不會顯示一個其實用不到的儲存空間權限。自製外掛要在 `MainActivity.onCreate()` 裡用
+`registerPlugin()` 手動註冊，而且必須在 `super.onCreate()` **之前**。
+
+### 存的是壓縮後的版本
+
+不是原始檔，理由有三個：
+
+- 原始 4K 照片 2~4MB，轉成 base64 要 5MB 以上才能通過 Capacitor 的 JS↔原生橋接，
+  入門機容易卡頓或記憶體不足。壓縮後約 200KB。
+- 1600px 比任何手機螢幕都大，病人看不出差別，但省下約 15 倍空間。
+- 壓縮會移除 EXIF，所以**相簿那份不含 GPS 座標**。相簿裡的照片多半會被 Google 相簿
+  自動備份到雲端，帶著住家座標上雲不是我們要的結果。
+
+代價是同一張照片壓兩次（一次給 App、一次給相簿）。兩次都從原始檔壓，沒有畫質疊加損失，
+只是多花一點 CPU。要省掉的話，可以把「照片來源」一路傳到 `mealStore.buildSlot()`，
+在那裡壓完順便存。
+
+### 存相簿一律是「盡力而為」
+
+沒權限、空間不足、系統拒絕，全部只會安靜地回 `false` 並寫一行 console，**絕不影響
+病人記錄這一餐**——照片在 App 的資料庫裡已經是安全的。`frontend/src/native/photoGallery.test.ts`
+守著兩件事：網頁版完全不會去呼叫，以及不論發生什麼都不會 throw。
+
+⚠ **尚未在實體 Android 裝置上驗證。** 程式會編譯、外掛有被打包進 APK、權限也正確宣告，
+但 MediaStore 的實際行為（相簿是否出現、檔名是否正確）需要實機確認。
+
 ## 遊戲化設計
 
 規則全部集中在 `backend/src/services/gamification.service.ts`，方便之後調整：

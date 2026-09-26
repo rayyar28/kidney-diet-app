@@ -22,6 +22,12 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    // 明確指定原始碼是 UTF-8。開發機的系統預設編碼是 MS950（繁中 Windows），
+    // 而 PhotoGalleryPlugin.java 裡有中文字串（相簿名稱「腎臟飲食紀錄」會顯示給病人看）。
+    // 不指定的話，換一台語系設定不同的電腦建置就可能編出亂碼的相簿名稱，而且不會有任何錯誤。
+    compileOptions {
+        encoding = "UTF-8"
+    }
 }
 
 repositories {
