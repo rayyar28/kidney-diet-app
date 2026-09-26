@@ -32,7 +32,7 @@
 | [docs/REPORT.md](docs/REPORT.md) | 給醫師/老師看的進度報告（2026-09-11 版本） |
 | [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) | 對外試用前的系統檢查報告（2026-09-11 版本） |
 
-## 技術棧
+## 使用技術
 
 - **前端**：React + TypeScript + Vite，做成 PWA（可以「加到主畫面」，不用上架）
 - **Android App**：Capacitor 把同一份前端包成 APK（`frontend/android/`），不是另外寫的程式
