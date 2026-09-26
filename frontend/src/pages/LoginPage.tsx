@@ -8,6 +8,7 @@ import type { AuthUser } from "../api/types";
 export function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
+  const startTrial = useAuthStore((s) => s.startTrial);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -77,12 +78,26 @@ export function LoginPage() {
         <Link to="/register" className="btn btn-ghost" style={{ textDecoration: "none" }}>
           還沒有帳號？建立新帳號
         </Link>
-        {/* 試用版才需要：讓測試者可以改連到別台後端。正式版寫死網址後這個連結不會出現 */}
-        {isNativeApp() && (
-          <Link to="/setup" className="page-hint" style={{ textAlign: "center" }}>
-            ⚙️ 伺服器設定
-          </Link>
-        )}
+        <div className="link-row">
+          {/* 不用帳號也能先把流程走一遍（紀錄只存在本機）。第一次開啟 App 時
+              「開始使用」畫面已經問過一次，這裡是給已經設定過伺服器的人回頭用的 */}
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => {
+              startTrial();
+              navigate("/", { replace: true });
+            }}
+          >
+            🧪 不登入，先試用
+          </button>
+          {/* 試用版才需要：讓測試者可以改連到別台後端。正式版寫死網址後這個連結不會出現 */}
+          {isNativeApp() && (
+            <Link to="/setup" className="link-btn" style={{ display: "inline-block" }}>
+              ⚙️ 伺服器設定
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   );

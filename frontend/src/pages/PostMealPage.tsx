@@ -3,10 +3,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { CameraCaptureField } from "../components/CameraCaptureField";
 import { pickCompletionMessage } from "../content/encouragement";
-import { attachPostPhoto, discardFailedMeal, getLocalMeal, loadServerCache } from "../offline/mealStore";
+import { attachPostPhoto, discardFailedMeal, getLocalMeal, listLocalMeals, loadServerCache } from "../offline/mealStore";
 import { syncAndWait } from "../offline/syncEngine";
 import { useSyncStore } from "../offline/syncStore";
 import { useAuthStore } from "../store/auth";
+import { computeLocalGamification } from "../trial/gamification";
 import type { GamificationSummary, MealRecord } from "../api/types";
 
 const MEAL_TYPE_LABEL: Record<string, string> = {
@@ -26,6 +27,12 @@ function formatDuration(seconds: number): string {
 /** 這一頁需要的、關於這筆用餐紀錄的資訊 (可能來自本機，也可能來自伺服器) */
 type MealInfo = Pick<MealRecord, "id" | "mealType" | "notes" | "preMealAt">;
 
+/** 這一餐讓病人「新拿到」哪些徽章：完成前沒有、完成後有的 */
+function newBadgesSince(before: GamificationSummary | null, after: GamificationSummary): string[] {
+  const earnedBefore = new Set((before?.badges ?? []).filter((b) => b.earned).map((b) => b.code));
+  return after.badges.filter((b) => b.earned && !earnedBefore.has(b.code)).map((b) => b.code);
+}
+
 interface Result {
   durationSeconds: number;
   /** null = 還沒上傳成功 (離線或太慢)，點數要等連上網路之後才算得出來 */
@@ -37,6 +44,7 @@ export function PostMealPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const trial = useAuthStore((s) => s.mode === "trial");
   const [meal, setMeal] = useState<MealInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [beforeSummary, setBeforeSummary] = useState<GamificationSummary | null>(null);
@@ -55,6 +63,10 @@ export function PostMealPage() {
       if (cancelled) return;
       if (local && local.userId === user.id) {
         setMeal({ id: local.id, mealType: local.mealType, notes: local.notes, preMealAt: local.preAt });
+      } else if (trial) {
+        // 試用模式的紀錄只可能在本機，本機沒有就是真的沒有
+        setLoadError("找不到這筆用餐紀錄");
+        return;
       } else {
         try {
           const data = await api.get<{ mealRecord: MealRecord }>(`/meals/${id}`);
@@ -77,6 +89,11 @@ export function PostMealPage() {
         }
       }
       // 記下「完成前」的徽章狀態，完成後才能算出這次新拿到哪些
+      if (trial) {
+        const locals = await listLocalMeals(user.id);
+        if (!cancelled) setBeforeSummary(computeLocalGamification(locals));
+        return;
+      }
       const cached = await loadServerCache(user.id).catch(() => undefined);
       let before = cached?.summary ?? null;
       try {
@@ -89,7 +106,7 @@ export function PostMealPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, user]);
+  }, [id, user, trial]);
 
   async function submit() {
     if (!file || !capturedAt || !id || !meal || !user) {
@@ -101,6 +118,13 @@ export function PostMealPage() {
     try {
       const saved = await attachPostPhoto({ userId: user.id, mealId: id, serverMeal: meal, file, capturedAt });
       const durationSeconds = Math.max(0, Math.round((capturedAt.getTime() - Date.parse(saved.preAt)) / 1000));
+
+      // 試用模式沒有伺服器：點數/徽章在本機用同一套規則算，立刻顯示完整的慶祝畫面
+      if (trial) {
+        const summary = computeLocalGamification(await listLocalMeals(user.id));
+        setResult({ durationSeconds, summary, newBadgeCodes: newBadgesSince(beforeSummary, summary) });
+        return;
+      }
 
       const outcome = await syncAndWait(id);
 
@@ -126,9 +150,7 @@ export function PostMealPage() {
 
       const summary =
         useSyncStore.getState().lastGamification ?? (await api.get<GamificationSummary>("/gamification/summary"));
-      const earnedBefore = new Set((beforeSummary?.badges ?? []).filter((b) => b.earned).map((b) => b.code));
-      const newBadgeCodes = summary.badges.filter((b) => b.earned && !earnedBefore.has(b.code)).map((b) => b.code);
-      setResult({ durationSeconds, summary, newBadgeCodes });
+      setResult({ durationSeconds, summary, newBadgeCodes: newBadgesSince(beforeSummary, summary) });
     } catch (err) {
       setError(err instanceof Error ? err.message : "儲存失敗，請再試一次");
     } finally {

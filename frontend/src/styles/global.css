@@ -485,6 +485,30 @@ button {
   background: rgba(193, 80, 63, 0.12);
 }
 
+/* 試用模式的提示：用主色系的淡底，跟「出事了」的橘/紅提示區隔開來 */
+.sync-bar-trial {
+  background: rgba(47, 111, 94, 0.12);
+}
+
+/* 文字連結樣式的按鈕：次要入口用，不佔一整顆按鈕的高度 */
+.link-btn {
+  background: none;
+  border: none;
+  padding: 6px 0;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-row {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
 .sync-bar-btn {
   flex-shrink: 0;
   border: 2px solid var(--color-primary);

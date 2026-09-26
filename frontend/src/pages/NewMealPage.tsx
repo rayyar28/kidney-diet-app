@@ -18,6 +18,7 @@ const MEAL_TYPES: Array<{ value: MealType; label: string; icon: string }> = [
 export function NewMealPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const trial = useAuthStore((s) => s.mode === "trial");
   const showToast = useToastStore((s) => s.show);
   const [mealType, setMealType] = useState<MealType>("BREAKFAST");
   const [file, setFile] = useState<File | null>(null);
@@ -47,6 +48,13 @@ export function NewMealPage() {
         file,
         capturedAt,
       });
+
+      // 試用模式沒有伺服器，存進本機就已經是最終狀態，不必也不能去等上傳結果
+      if (trial) {
+        showToast("餐前紀錄完成！吃完記得回來拍 📸");
+        navigate("/");
+        return;
+      }
 
       const outcome = await syncAndWait(meal.id);
       if (typeof outcome === "object") {

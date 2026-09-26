@@ -1,6 +1,7 @@
 import { BottomNav } from "../components/BottomNav";
 import { AuthedImage } from "../components/AuthedImage";
 import { SyncStatusBar } from "../components/SyncStatusBar";
+import { TrialBanner } from "../components/TrialBanner";
 import { Toast } from "../components/Toast";
 import { discardFailedMeal, requestRemove, retryFailedMeal } from "../offline/mealStore";
 import { requestSync } from "../offline/syncEngine";
@@ -76,6 +77,7 @@ export function HistoryPage() {
       </div>
 
       <div className="page">
+        <TrialBanner />
         <SyncStatusBar offline={offline} />
 
         {loading && <p className="page-hint">載入中…</p>}

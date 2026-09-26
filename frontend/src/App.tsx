@@ -15,17 +15,22 @@ import { needsApiBaseSetup } from "./api/config";
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
-  if (!accessToken) return <Navigate to="/login" replace />;
+  // 試用模式沒有帳號也沒有 token，但一樣可以進 App（資料只存在本機）
+  const trial = useAuthStore((s) => s.mode === "trial");
+  if (!accessToken && !trial) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 export default function App() {
-  // 登入期間一直開著同步引擎：把本機還沒上傳的紀錄在有網路時補傳給伺服器
   const userId = useAuthStore((s) => s.user?.id);
+  const trial = useAuthStore((s) => s.mode === "trial");
+
+  // 登入期間一直開著同步引擎：把本機還沒上傳的紀錄在有網路時補傳給伺服器。
+  // 試用模式不啟動——沒有伺服器可傳，開著只會讓畫面一直顯示「N 筆等待上傳」。
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || trial) return;
     return startSyncEngine();
-  }, [userId]);
+  }, [userId, trial]);
 
   // 試用版 APK 第一次開啟時還不知道後端在哪，先請使用者設定（正式版寫死網址，不會進到這裡）。
   //
@@ -33,7 +38,8 @@ export default function App() {
   // 路由變化不會讓 App 重新 render，所以設定完網址之後那個判斷不會被重新計算，
   // 畫面會一直卡在設定頁（存好了也跳不出去）。存檔成功時由設定頁回呼把這個狀態關掉。
   const [needsSetup, setNeedsSetup] = useState(needsApiBaseSetup);
-  if (needsSetup) {
+  // 選了「直接試用」就不必設定網址；trial 有訂閱，切換模式時這裡會重新判斷
+  if (needsSetup && !trial) {
     return (
       <Routes>
         <Route path="*" element={<ServerSetupPage onSaved={() => setNeedsSetup(false)} />} />

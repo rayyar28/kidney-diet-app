@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, NetworkError } from "../api/client";
 import { Toast } from "../components/Toast";
+import { useAuthStore } from "../store/auth";
 import { useToastStore } from "../store/toast";
+import { loadTrialProfile, saveTrialProfile } from "../trial/trialData";
 
+/** 欄位跟後端的 PatientProfile 一致；試用模式下同樣的形狀改存 localStorage */
 interface PatientProfile {
   ckdStage: string;
   dialysisType: string;
@@ -41,6 +44,7 @@ const LIMIT_FIELDS: Array<{ key: keyof PatientProfile; label: string }> = [
  */
 export function HealthProfilePage() {
   const navigate = useNavigate();
+  const trial = useAuthStore((s) => s.mode === "trial");
   const showToast = useToastStore((s) => s.show);
   const [profile, setProfile] = useState<PatientProfile>({
     ckdStage: "UNKNOWN",
@@ -55,19 +59,30 @@ export function HealthProfilePage() {
   const [limitsOpen, setLimitsOpen] = useState(false);
 
   useEffect(() => {
+    function apply(p: PatientProfile | null) {
+      if (!p) return;
+      setProfile(p);
+      // 已經填過上限的人，直接展開讓他看得到自己填的值
+      if (LIMIT_FIELDS.some((f) => p[f.key] != null)) setLimitsOpen(true);
+    }
+    // 試用模式沒有伺服器，健康資料改存這支手機：讓測試者能把這一頁完整走完
+    if (trial) {
+      apply(loadTrialProfile());
+      return;
+    }
     api
       .get<{ user: { patientProfile: PatientProfile | null } }>("/profile")
-      .then((data) => {
-        const p = data.user.patientProfile;
-        if (!p) return;
-        setProfile(p);
-        // 已經填過上限的人，直接展開讓他看得到自己填的值
-        if (LIMIT_FIELDS.some((f) => p[f.key] != null)) setLimitsOpen(true);
-      })
+      .then((data) => apply(data.user.patientProfile))
       .catch(() => {});
-  }, []);
+  }, [trial]);
 
   async function save() {
+    if (trial) {
+      saveTrialProfile(profile);
+      showToast("已儲存");
+      navigate("/profile");
+      return;
+    }
     setSaving(true);
     try {
       await api.put("/profile", profile);

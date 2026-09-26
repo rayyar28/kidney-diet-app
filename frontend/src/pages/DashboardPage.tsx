@@ -3,6 +3,7 @@ import { useAuthStore } from "../store/auth";
 import { BottomNav } from "../components/BottomNav";
 import { ElapsedTimer } from "../components/ElapsedTimer";
 import { SyncStatusBar } from "../components/SyncStatusBar";
+import { TrialBanner } from "../components/TrialBanner";
 import { Toast } from "../components/Toast";
 import { requestAbandon } from "../offline/mealStore";
 import { useMealViews } from "../offline/useMealViews";
@@ -62,6 +63,7 @@ export function DashboardPage() {
       </div>
 
       <div className="page">
+        <TrialBanner />
         <SyncStatusBar offline={offline} />
 
         {current ? (

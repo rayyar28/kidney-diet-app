@@ -1,21 +1,37 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getApiBase, normalizeApiBase, setApiBase } from "../api/config";
+import { useAuthStore } from "../store/auth";
 
 /**
- * 試用版專用：設定要連哪一台後端伺服器。
+ * App 第一次開啟時的入口：選擇「直接試用」還是「連到伺服器」。
  *
- * 正式發給病人的版本會在建置時用 VITE_API_BASE_URL 寫死網址，這個畫面
- * 不會出現（needsApiBaseSetup() 會是 false，也不會有人導到這裡）。
- * 留這個畫面是為了讓同一個試用版 APK 可以先連開發電腦，之後正式伺服器
- * 架好再改指過去，不必重新打包、重新安裝。
+ * 兩條路的用途不同：
+ * - **直接試用**：給護理師/衛教師測試介面用。不需要網址、不需要帳號，
+ *   所有紀錄只存在這支手機。要讓人願意花時間幫忙試用，第一步就不能是填網址。
+ * - **連到伺服器**：給開發/demo 用，也是之後真正收資料的路。
+ *
+ * 正式發給病人的版本會在建置時用 VITE_API_BASE_URL 寫死網址，這個畫面不會出現
+ * （needsApiBaseSetup() 會是 false）。留這個畫面是為了讓同一個試用版 APK 可以先連
+ * 開發電腦，之後正式伺服器架好再改指過去，不必重新打包、重新安裝。
  */
 export function ServerSetupPage({ onSaved }: { onSaved?: () => void } = {}) {
   const navigate = useNavigate();
+  const startTrial = useAuthStore((s) => s.startTrial);
   const current = getApiBase();
   const [input, setInput] = useState(current === "/api" ? "" : current);
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  // onSaved 只有在「App 啟動時強制顯示這一頁」的情況下才會傳進來。
+  // 那時候整個路由只有這一頁，按「返回」跳到 /login 也還是會回到這裡，所以不顯示。
+  const isFirstRun = onSaved !== undefined;
+
+  function beginTrial() {
+    // 切到試用模式後 App 會重新 render 並放行路由（見 App.tsx 的 needsSetup 判斷）
+    startTrial();
+    navigate("/", { replace: true });
+  }
 
   async function testAndSave() {
     const url = normalizeApiBase(input);
@@ -51,14 +67,20 @@ export function ServerSetupPage({ onSaved }: { onSaved?: () => void } = {}) {
     <div className="app-shell">
       <div className="top-bar">
         <div>
-          <h1 className="page-title">伺服器設定</h1>
-          <p className="page-hint">試用版才需要，正式版不會看到這一頁</p>
+          <h1 className="page-title">開始使用</h1>
+          <p className="page-hint">試用不需要網路，也不需要帳號</p>
         </div>
       </div>
 
       <div className="page">
+        <button type="button" className="hero-btn" onClick={beginTrial}>
+          <span className="hero-icon">🧪</span>
+          <span className="hero-label">直接試用</span>
+          <span className="hero-hint">紀錄只存在這支手機，不會上傳</span>
+        </button>
+
+        <div className="section-title">或：連到伺服器</div>
         <div className="field">
-          <label className="label">後端網址</label>
           <input
             className="input"
             type="url"
@@ -70,12 +92,12 @@ export function ServerSetupPage({ onSaved }: { onSaved?: () => void } = {}) {
             onChange={(e) => setInput(e.target.value)}
           />
         </div>
-        <p className="page-hint">
-          可以只輸入網域，系統會自動補上 <code>https://</code> 與結尾的 <code>/api</code>。
-        </p>
 
         {result && (
-          <p className={result.ok ? "page-hint" : "error-text"} style={result.ok ? { color: "var(--color-primary)", fontWeight: 700 } : undefined}>
+          <p
+            className={result.ok ? "page-hint" : "error-text"}
+            style={result.ok ? { color: "var(--color-primary)", fontWeight: 700 } : undefined}
+          >
             {result.ok ? "✓ " : "✕ "}
             {result.message}
           </p>
@@ -83,12 +105,14 @@ export function ServerSetupPage({ onSaved }: { onSaved?: () => void } = {}) {
       </div>
 
       <div className="page-footer">
-        <button className="btn btn-primary" onClick={testAndSave} disabled={testing}>
+        <button className="btn btn-secondary" onClick={testAndSave} disabled={testing}>
           {testing ? "測試連線中…" : "測試並儲存"}
         </button>
-        <button className="btn btn-ghost" onClick={() => navigate("/login")}>
-          返回
-        </button>
+        {!isFirstRun && (
+          <button className="btn btn-ghost" onClick={() => navigate(-1)}>
+            返回
+          </button>
+        )}
       </div>
     </div>
   );

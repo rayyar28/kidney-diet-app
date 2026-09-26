@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { loadServerCache } from "../offline/mealStore";
+import { listLocalMeals, loadServerCache } from "../offline/mealStore";
 import { useSyncStore } from "../offline/syncStore";
 import { useAuthStore } from "../store/auth";
+import { useToastStore } from "../store/toast";
+import { computeLocalGamification } from "../trial/gamification";
+import { clearTrialData } from "../trial/trialData";
 import { BottomNav } from "../components/BottomNav";
 import { Toast } from "../components/Toast";
 import type { GamificationSummary } from "../api/types";
@@ -15,23 +18,51 @@ import type { GamificationSummary } from "../api/types";
 export function ProfilePage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const trial = useAuthStore((s) => s.mode === "trial");
   const clearAuth = useAuthStore((s) => s.clearAuth);
+  const showToast = useToastStore((s) => s.show);
   const pendingCount = useSyncStore((s) => s.pendingCount);
   const failedCount = useSyncStore((s) => s.failedCount);
   const [summary, setSummary] = useState<GamificationSummary | null>(null);
 
+  const loadTrialSummary = useCallback(async () => {
+    if (!user) return;
+    const locals = await listLocalMeals(user.id).catch(() => []);
+    setSummary(computeLocalGamification(locals));
+  }, [user]);
+
   useEffect(() => {
-    // 離線時載不到就用本機快取，不要丟出未處理的錯誤
-    if (user) {
-      loadServerCache(user.id)
-        .then((cached) => cached?.summary && setSummary(cached.summary))
-        .catch(() => {});
+    if (!user) return;
+    // 試用模式沒有伺服器，點數/徽章在本機用同一套規則算
+    if (trial) {
+      void loadTrialSummary();
+      return;
     }
+    // 離線時載不到就用本機快取，不要丟出未處理的錯誤
+    loadServerCache(user.id)
+      .then((cached) => cached?.summary && setSummary(cached.summary))
+      .catch(() => {});
     api
       .get<GamificationSummary>("/gamification/summary")
       .then(setSummary)
       .catch(() => {});
-  }, [user]);
+  }, [user, trial, loadTrialSummary]);
+
+  async function resetTrial() {
+    if (!window.confirm("要清除試用期間的所有紀錄嗎？清除後無法復原。\n\n（適合換下一位測試者接手前使用）")) return;
+    await clearTrialData();
+    await loadTrialSummary();
+    showToast("已清除試用紀錄");
+  }
+
+  function endTrial() {
+    const ok = window.confirm(
+      "結束試用後會回到「開始使用」畫面。\n\n試用期間的紀錄會留在這支手機，下次再進試用模式還看得到；要清掉請先按「清除試用紀錄」。"
+    );
+    if (!ok) return;
+    clearAuth();
+    navigate("/login", { replace: true });
+  }
 
   function logout() {
     const unsynced = pendingCount + failedCount;
@@ -89,9 +120,21 @@ export function ProfilePage() {
         <button className="btn btn-secondary" onClick={() => navigate("/profile/health")}>
           🩺 我的健康資料
         </button>
-        <button className="btn btn-ghost" onClick={logout}>
-          登出
-        </button>
+        {trial ? (
+          <>
+            <button className="btn btn-ghost" onClick={endTrial}>
+              結束試用
+            </button>
+            {/* 換下一位測試者之前用的，刻意做小、放最下面，避免被當成一般操作誤按 */}
+            <button type="button" className="link-btn" onClick={resetTrial}>
+              清除試用紀錄
+            </button>
+          </>
+        ) : (
+          <button className="btn btn-ghost" onClick={logout}>
+            登出
+          </button>
+        )}
       </div>
 
       <Toast />

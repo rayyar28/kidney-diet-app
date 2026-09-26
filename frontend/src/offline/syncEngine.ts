@@ -1,4 +1,4 @@
-import { useAuthStore } from "../store/auth";
+import { isTrialMode, useAuthStore } from "../store/auth";
 import { backoffMs, hasPendingWork } from "./logic";
 import { getLocalMeal, listLocalMeals, onLocalChange, pruneSyncedMeals, saveServerCache } from "./mealStore";
 import { apiTransport, runSyncOnce, type RunResult } from "./syncRunner";
@@ -25,7 +25,7 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 export async function refreshCounts(): Promise<void> {
   const user = useAuthStore.getState().user;
-  if (!user) {
+  if (!user || isTrialMode()) {
     useSyncStore.getState().patch({ pendingCount: 0, failedCount: 0 });
     return;
   }
@@ -109,6 +109,9 @@ async function runLocked(userId: string): Promise<RunResult | null> {
  * force: 略過退避等待 (網路恢復、使用者手動按、App 回到前景時用)。
  */
 export function requestSync(opts: { force?: boolean } = {}): Promise<RunResult | null> {
+  // 試用模式沒有伺服器可傳。這個 return 要擺在最前面、而且不能去動 syncStore：
+  // 只要碰了狀態，畫面就會冒出「請重新登入 / N 筆等待上傳」之類跟試用無關的提示。
+  if (isTrialMode()) return Promise.resolve(null);
   if (opts.force) forceNext = true;
   if (running) {
     dirty = true;
