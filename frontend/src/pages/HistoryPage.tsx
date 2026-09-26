@@ -1,158 +1,141 @@
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { BottomNav } from "../components/BottomNav";
-import { AuthedImage } from "../components/AuthedImage";
 import { SyncStatusBar } from "../components/SyncStatusBar";
 import { TrialBanner } from "../components/TrialBanner";
 import { Toast } from "../components/Toast";
-import { discardFailedMeal, requestRemove, retryFailedMeal } from "../offline/mealStore";
-import { requestSync } from "../offline/syncEngine";
 import { useMealViews } from "../offline/useMealViews";
-import type { MealView } from "../offline/types";
 import { useAuthStore } from "../store/auth";
-import { useToastStore } from "../store/toast";
-
-const MEAL_TYPE_LABEL: Record<string, string> = {
-  BREAKFAST: "早餐",
-  LUNCH: "午餐",
-  DINNER: "晚餐",
-  SNACK: "點心",
-};
-
-function formatDuration(seconds: number | null): string {
-  if (seconds == null) return "—";
-  const m = Math.round(seconds / 60);
-  if (m < 60) return `${m} 分鐘`;
-  const h = Math.floor(m / 60);
-  return `${h} 時 ${m % 60} 分`;
-}
+import {
+  WEEKDAY_LABELS,
+  addMonths,
+  dayKey,
+  isFutureMonth,
+  monthGrid,
+  monthLabel,
+  summariseByDay,
+} from "./historyCalendar";
 
 /**
- * 優先用本機縮圖 (不需要網路、立刻顯示)，沒有才向伺服器載入。
- * 完全沒有照片時不佔位（例如還沒拍餐後照），避免在窄螢幕上白白吃掉寬度。
- */
-function MealPhoto({ thumb, photoId, alt }: { thumb: string | null; photoId?: string; alt: string }) {
-  if (thumb) return <img src={thumb} alt={alt} />;
-  if (photoId) return <AuthedImage photoId={photoId} alt={alt} />;
-  return null;
-}
-
-/**
- * 歷史紀錄。這一頁本質上是一份會越來越長的清單，所以是全 App 唯一需要滑動的頁面；
- * 每一列刻意做得矮而字大，一個畫面大約能看到 4~5 筆。
+ * 紀錄頁＝月曆。一個月一眼看完，哪幾天有記錄、哪幾天漏掉一目了然，
+ * 這比一長串清單更容易讓病人看見自己的習慣（也跟點數/連續天數的設計呼應）。
+ *
+ * 只有「有紀錄的日子」才是可以按的按鈕：空白的日子做成純文字，
+ * 病人就不會按了半天沒反應，也不會被導到一個空畫面。
+ * 按下去進入 /history/YYYY-MM-DD 看那一天每一餐的照片。
  */
 export function HistoryPage() {
-  const user = useAuthStore((s) => s.user);
-  const showToast = useToastStore((s) => s.show);
+  const navigate = useNavigate();
   const { meals, loading, offline } = useMealViews();
+  const trial = useAuthStore((s) => s.mode === "trial");
 
-  async function handleDelete(meal: MealView) {
-    if (!user) return;
-    const label = MEAL_TYPE_LABEL[meal.mealType];
-    const when = new Date(meal.preMealAt).toLocaleDateString("zh-TW");
-    if (!window.confirm(`要刪除「${when} ${label}」這筆紀錄嗎？`)) return;
-    try {
-      // 離線也能刪：畫面上立刻消失，連上網路後才通知伺服器 (跟線上一樣是軟刪除)
-      await requestRemove({ userId: user.id, mealId: meal.id, serverMeal: meal });
-      showToast("已刪除這筆紀錄");
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "刪除失敗，請再試一次");
-    }
-  }
+  // 只在第一次 render 取一次「今天」：跨午夜時整頁重算沒有意義，反而會閃動
+  const today = useMemo(() => new Date(), []);
+  const [cursor, setCursor] = useState(() => ({ year: today.getFullYear(), month0: today.getMonth() }));
 
-  async function handleRetry(mealId: string) {
-    await retryFailedMeal(mealId);
-    void requestSync({ force: true });
-    showToast("重新上傳中…");
-  }
+  const byDay = useMemo(() => summariseByDay(meals), [meals]);
+  const cells = useMemo(() => monthGrid(cursor.year, cursor.month0), [cursor]);
+  const todayKey = dayKey(today);
 
-  async function handleDiscard(mealId: string) {
-    if (!window.confirm("要捨棄這筆上傳失敗的紀錄嗎？捨棄後無法復原。")) return;
-    await discardFailedMeal(mealId);
-    showToast("已捨棄");
-  }
+  const monthTotal = cells.reduce((sum, c) => (c.inMonth ? sum + (byDay.get(c.key)?.total ?? 0) : sum), 0);
+  const next = addMonths(cursor.year, cursor.month0, 1);
+  const canGoNext = !isFutureMonth(next.year, next.month0, today);
 
   return (
     <div className="app-shell">
       <div className="top-bar">
-        <h1 className="page-title">我的紀錄</h1>
+        <div>
+          <h1 className="page-title">我的紀錄</h1>
+          <p className="page-hint">{loading ? "載入中…" : `這個月記錄了 ${monthTotal} 餐`}</p>
+        </div>
       </div>
 
       <div className="page">
         <TrialBanner />
         <SyncStatusBar offline={offline} />
 
-        {loading && <p className="page-hint">載入中…</p>}
-        {!loading && meals.length === 0 && (
-          <p className="page-hint" style={{ textAlign: "center", marginTop: 32 }}>
-            還沒有任何紀錄，
-            <br />
-            回首頁拍下第一餐吧！
-          </p>
-        )}
+        <div className="cal-header">
+          <button
+            type="button"
+            className="cal-nav"
+            aria-label="上個月"
+            onClick={() => setCursor(addMonths(cursor.year, cursor.month0, -1))}
+          >
+            ‹
+          </button>
+          <span className="cal-month">{monthLabel(cursor.year, cursor.month0)}</span>
+          <button
+            type="button"
+            className="cal-nav"
+            aria-label="下個月"
+            disabled={!canGoNext}
+            onClick={() => setCursor(next)}
+          >
+            ›
+          </button>
+        </div>
 
-        <div className="record-list">
-          {meals.map((meal) => {
-            const pre = meal.photos?.find((p) => p.phase === "PRE_MEAL");
-            const post = meal.photos?.find((p) => p.phase === "POST_MEAL");
-            const waiting = meal.status === "AWAITING_POST_PHOTO";
+        <div className="cal-grid cal-weekdays" aria-hidden="true">
+          {WEEKDAY_LABELS.map((w) => (
+            <span key={w}>{w}</span>
+          ))}
+        </div>
+
+        <div className="cal-grid cal-days">
+          {cells.map((cell) => {
+            const s = byDay.get(cell.key);
+            const isToday = cell.key === todayKey;
+            const classes = ["cal-cell", cell.inMonth ? "" : "cal-out", s ? "cal-has" : "", isToday ? "cal-today" : ""]
+              .filter(Boolean)
+              .join(" ");
+
+            if (!s) {
+              return (
+                <span key={cell.key} className={classes}>
+                  <span className="cal-day">{cell.date.getDate()}</span>
+                </span>
+              );
+            }
             return (
-              <div key={meal.id} className="record">
-                <div className="record-thumbs">
-                  <MealPhoto thumb={meal.preThumbDataUrl} photoId={pre?.id} alt="餐前" />
-                  <MealPhoto thumb={meal.postThumbDataUrl} photoId={post?.id} alt="餐後" />
-                </div>
-
-                <div className="record-body">
-                  <div className="record-title">{MEAL_TYPE_LABEL[meal.mealType]}</div>
-                  <div className="record-meta">
-                    {new Date(meal.preMealAt).toLocaleString("zh-TW", {
-                      month: "numeric",
-                      day: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </div>
-                  {meal.status === "COMPLETED" && (
-                    <div className="record-meta">吃了 {formatDuration(meal.mealDurationSeconds)}</div>
-                  )}
-                  {/* 標籤放在自己一行：窄螢幕上跟標題同一行會被擠成一字一行 */}
-                  <div className="record-tags">
-                    {meal.status === "ABANDONED" && <span className="tag">已放棄</span>}
-                    {waiting && <span className="tag tag-waiting">待補餐後照</span>}
-                    {meal.sync === "pending" && <span className="tag">☁️ 待上傳</span>}
-                    {meal.sync === "failed" && <span className="tag tag-failed">⚠️ 上傳失敗</span>}
-                  </div>
-
-                  {meal.sync === "failed" && (
-                    <>
-                      <p className="error-text" style={{ fontSize: "var(--fs-sm)", marginTop: 6 }}>
-                        {meal.failureMessage ?? "上傳失敗"}
-                      </p>
-                      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                        <button type="button" className="sync-bar-btn" onClick={() => handleRetry(meal.id)}>
-                          重試
-                        </button>
-                        <button type="button" className="sync-bar-btn" onClick={() => handleDiscard(meal.id)}>
-                          捨棄
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {meal.sync !== "failed" && (
-                  <button
-                    type="button"
-                    className="icon-btn danger"
-                    aria-label="刪除"
-                    onClick={() => handleDelete(meal)}
-                  >
-                    🗑️
-                  </button>
-                )}
-              </div>
+              <button
+                key={cell.key}
+                type="button"
+                className={classes}
+                aria-label={`${cell.date.getMonth() + 1} 月 ${cell.date.getDate()} 日，${s.total} 餐`}
+                onClick={() => navigate(`/history/${cell.key}`)}
+              >
+                <span className="cal-day">{cell.date.getDate()}</span>
+                <span className="cal-dots">
+                  {/* 一餐一個點，最多四個：格子只有 45px 寬，再多就糊成一團了 */}
+                  {s.marks.slice(0, 4).map((mark, i) => (
+                    <i key={i} className={`cal-dot cal-${mark}`} />
+                  ))}
+                </span>
+              </button>
             );
           })}
         </div>
+
+        <div className="cal-legend">
+          <span>
+            <i className="cal-dot cal-done" />已完成
+          </span>
+          <span>
+            <i className="cal-dot cal-waiting" />待補餐後照
+          </span>
+          {/* 試用模式不會上傳，也就不可能有上傳失敗；列出來只會讓試用者困惑 */}
+          {!trial && (
+            <span>
+              <i className="cal-dot cal-failed" />上傳失敗
+            </span>
+          )}
+        </div>
+
+        {!loading && monthTotal === 0 && (
+          <p className="page-hint" style={{ textAlign: "center" }}>
+            這個月還沒有紀錄，回首頁拍一餐吧！
+          </p>
+        )}
       </div>
 
       <Toast />

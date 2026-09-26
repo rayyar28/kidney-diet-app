@@ -522,49 +522,228 @@ button {
   cursor: pointer;
 }
 
-/* ----------------------------- 紀錄列表 ----------------------------- */
+/* ----------------------------- 月曆（紀錄頁） ----------------------------- */
 
-/* 紀錄頁是「一整串歷史資料」，本質上需要滑動，但每一列都做得緊湊、字大 */
-.record-list {
+/*
+ * 紀錄頁是月曆：一個月一眼看完。七欄靠 grid 平分寬度，
+ * 在 375px 的手機上每格約 45px 寬，日期 18px 仍然看得清楚。
+ */
+.cal-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cal-month {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.cal-nav {
+  flex-shrink: 0;
+  width: 48px;
+  min-height: 48px; /* 手指好按 */
+  border: 2px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cal-nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.cal-grid {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.cal-weekdays {
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+}
+
+/*
+ * 日期格：高度不是固定的，而是把畫面剩下的空間平均分給每一排。
+ * 月曆會有 4~6 排（看 1 號落在星期幾），如果格子做成正方形，6 排的月份在 375x667
+ * 的手機上就會超出一頁需要滑動——尤其再加上試用模式的提示列時。交給 1fr 去分配，
+ * 排數多就矮一點、少就高一點，永遠剛好放得下。
+ */
+.cal-days {
+  flex: 1;
+  min-height: 0;
+  grid-auto-rows: minmax(38px, 1fr);
+}
+
+.cal-cell {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+/* 上/下個月補進來的日期：變淡但保留，才看得出這一週的完整形狀 */
+.cal-out {
+  opacity: 0.28;
+}
+
+/* 有紀錄的日子才是按鈕，空白的日子是純文字：病人不會按了沒反應 */
+.cal-cell.cal-has {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cal-cell.cal-has:active {
+  transform: scale(0.94);
+}
+
+.cal-today {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.cal-day {
+  font-size: var(--fs-base);
+  line-height: 1;
+}
+
+.cal-dots {
+  display: flex;
+  gap: 3px;
+  height: 7px;
+  align-items: center;
+}
+
+.cal-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.cal-dot.cal-waiting {
+  background: var(--color-accent);
+}
+
+.cal-dot.cal-failed {
+  background: var(--color-danger);
+}
+
+.cal-dot.cal-gone {
+  background: var(--color-border);
+}
+
+.cal-legend {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+}
+
+.cal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ----------------------------- 某一天的紀錄 ----------------------------- */
+
+/* 這一頁本質上是清單，允許滑動；重點是照片要夠大，看得出吃了什麼 */
+.day-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   margin: 0 -2px;
   padding: 0 2px;
 }
 
-.record {
+.day-meal {
   background: var(--color-surface);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
   padding: 12px;
   display: flex;
-  gap: 12px;
-  align-items: center;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.record-thumbs {
+.day-meal-head {
   display: flex;
-  gap: 4px;
-  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
 }
 
-.record-thumbs img,
-.record-thumbs .thumb-empty {
-  width: 56px;
-  height: 56px;
+.day-meal-head .record-meta {
+  flex: 1;
+}
+
+.day-photos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.day-photo {
+  position: relative;
+  aspect-ratio: 1;
   border-radius: var(--radius-sm);
-  object-fit: cover;
+  overflow: hidden;
   background: var(--color-border);
+}
+
+.day-photo img,
+.day-photo > div {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   display: block;
 }
 
-.record-body {
-  flex: 1;
-  min-width: 0;
+/* 要比上面的 `.day-photo > div` 更明確，否則會被它的 display:block 蓋掉、文字不置中 */
+.day-photo > .day-photo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-sm);
+  color: var(--color-text-muted);
+}
+
+.day-photo-label {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 999px;
 }
 
 .record-title {

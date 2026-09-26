@@ -8,6 +8,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { NewMealPage } from "./pages/NewMealPage";
 import { PostMealPage } from "./pages/PostMealPage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { HistoryDayPage } from "./pages/HistoryDayPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { HealthProfilePage } from "./pages/HealthProfilePage";
 import { ServerSetupPage } from "./pages/ServerSetupPage";
@@ -81,6 +82,14 @@ export default function App() {
         element={
           <RequireAuth>
             <HistoryPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/history/:day"
+        element={
+          <RequireAuth>
+            <HistoryDayPage />
           </RequireAuth>
         }
       />
