@@ -68,4 +68,28 @@ export const env = {
 
   // 簽名網址的有效秒數。設短一點比較安全，但太短的話病人網路慢就會載入失敗。
   signedUrlTtlSeconds: Number(process.env.SIGNED_URL_TTL_SECONDS ?? 300),
+
+  // ---------------------------------------------------------------------
+  // 忘記密碼
+  // ---------------------------------------------------------------------
+  /**
+   * 重設代碼的有效時間。設太短，年長病人還沒去信箱找就過期了；
+   * 設太長，代碼被別人看到的風險窗口就變大。一小時是兩者的折衷。
+   */
+  passwordResetExpiresMs: parseDurationMs(process.env.PASSWORD_RESET_EXPIRES_IN ?? "60m"),
+
+  /**
+   * 前端網址，用來組出信件裡的重設連結（例如 https://kidney-diet.pages.dev）。
+   * 沒設定就不放連結，信裡只有代碼——App 使用者本來就是用打代碼的，不影響功能。
+   */
+  appUrl: (process.env.APP_URL ?? "").replace(/\/$/, ""),
+
+  mail: {
+    // "console"（印在 log，開發用）或 "resend"（真的寄出去，正式用）
+    driver: (process.env.MAIL_DRIVER ?? "console") as "console" | "resend",
+    resendApiKey: process.env.RESEND_API_KEY ?? "",
+    // 寄件者，例如 "腎臟飲食小幫手 <noreply@你的網域>"。網域必須在 Resend 驗證過，
+    // 否則信會被當成垃圾信（或直接被退回）。
+    from: process.env.MAIL_FROM ?? "",
+  },
 };

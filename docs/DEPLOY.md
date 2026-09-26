@@ -121,8 +121,16 @@ docker compose up --build
    | `R2_ACCESS_KEY_ID` | R2 API Token 的 Access Key ID |
    | `R2_SECRET_ACCESS_KEY` | R2 API Token 的 Secret |
    | `R2_BUCKET` | `kidney-diet-photos` |
+   | `MAIL_DRIVER` | `resend`（不設的話會變成只印在 log，病人收不到重設信） |
+   | `RESEND_API_KEY` | Resend 後台產生的 API Key |
+   | `MAIL_FROM` | 例如 `腎臟飲食小幫手 <noreply@你的網域>` |
+   | `APP_URL` | 前端網址，信裡的重設連結會用它組出來。不設就只寄代碼 |
 
    `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` 設成 `generateValue: true`，Render 會自己產生隨機值，你不用管。
+
+   > **寄信要注意**：`MAIL_FROM` 的網域必須先在 Resend 驗證過（加 SPF / DKIM 記錄），
+   > 否則信會進垃圾信匣或直接被退回。免費方案每月 3000 封，對這個規模綽綽有餘。
+   > 沒有自己的網域就沒辦法通過驗證——這也是「要不要買網域」那個決定的影響之一。
 
 5. 部署完成後（第一次約 5–10 分鐘），確認健康檢查：
    ```
@@ -215,6 +223,11 @@ docker compose up --build
 - [ ] **確認 `JWT_REFRESH_EXPIRES_IN` 符合收案族群的回診間隔** — 病人多久會連上伺服器
       一次，就決定這個值要多大。洗腎病人（一週三次）30d 夠用；一般門診 2~3 個月回診
       一次要設 180d 以上，否則病人帶著累積的紀錄回診時會發現被登出。
+- [ ] **設定好寄信**（`MAIL_DRIVER=resend` + 已驗證網域）並實際收一封重設信。
+      沒設的話病人按「忘記密碼」會看到成功畫面，但信永遠不會到——這是最容易漏掉的一項，
+      因為開發時的 console 模式看起來一切正常。
+- [ ] **幫衛教師開好 `RESEARCHER` 帳號**（`npm run grant-role`），並確認他們知道
+      「病人信箱進不去時可以當面開代碼」這條路。
 - [ ] IRB 送審通過
 
 ### 建議加上

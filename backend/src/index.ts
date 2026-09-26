@@ -6,6 +6,7 @@ import { mealsRouter } from "./routes/meals.routes.js";
 import { photosRouter } from "./routes/photos.routes.js";
 import { gamificationRouter } from "./routes/gamification.routes.js";
 import { profileRouter } from "./routes/profile.routes.js";
+import { staffRouter } from "./routes/staff.routes.js";
 import { errorMiddleware } from "./middleware/error.middleware.js";
 
 const app = express();
@@ -47,6 +48,7 @@ app.use("/api/meals", mealsRouter);
 app.use("/api/photos", photosRouter);
 app.use("/api/gamification", gamificationRouter);
 app.use("/api/profile", profileRouter);
+app.use("/api/staff", staffRouter);
 
 app.use(errorMiddleware);
 

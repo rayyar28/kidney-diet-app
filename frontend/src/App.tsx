@@ -12,6 +12,9 @@ import { HistoryDayPage } from "./pages/HistoryDayPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { HealthProfilePage } from "./pages/HealthProfilePage";
 import { ServerSetupPage } from "./pages/ServerSetupPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { StaffResetPage } from "./pages/StaffResetPage";
 import { needsApiBaseSetup } from "./api/config";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -53,6 +56,9 @@ export default function App() {
       <Route path="/setup" element={<ServerSetupPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      {/* 忘記密碼不需要登入就能用 */}
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/"
         element={
@@ -98,6 +104,14 @@ export default function App() {
         element={
           <RequireAuth>
             <ProfilePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/staff/reset"
+        element={
+          <RequireAuth>
+            <StaffResetPage />
           </RequireAuth>
         }
       />

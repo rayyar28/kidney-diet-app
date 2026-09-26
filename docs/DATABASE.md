@@ -14,6 +14,7 @@ erDiagram
     User ||--o| UserStreak : "有"
     User ||--o{ UserBadge : "獲得"
     User ||--o{ RefreshToken : "持有"
+    User ||--o{ PasswordResetToken : "申請重設"
 
     MealRecord ||--o{ Photo : "餐前/餐後照"
     Photo ||--o| NutritionEstimate : "辨識結果(預留)"
@@ -95,8 +96,23 @@ erDiagram
 ## 各資料表的設計理由
 
 ### `User` / `RefreshToken`
-基本帳號資訊與登入機制。`role` 欄位現在只用 `PATIENT`，但先預留 `RESEARCHER` /
-`ADMIN`，之後要做「研究人員登入看多位病人資料」的後台時，不需要改 schema。
+基本帳號資訊與登入機制。`role` 目前用到 `PATIENT` 與 `RESEARCHER`（衛教師代病人重設密碼時
+需要），`ADMIN` 仍是預留。角色**不能自助申請**：註冊一律是 `PATIENT`，要升級只能由管理者在
+伺服器上跑 `npm run grant-role`。
+
+### `PasswordResetToken`（一次性的密碼重設代碼）
+病人忘記密碼時用的。設計上有幾個刻意的選擇，理由見
+[ARCHITECTURE.md 的「忘記密碼」](./ARCHITECTURE.md)：
+
+| 欄位 | 用途 |
+|---|---|
+| `codeHash` | **只存 sha256，不存代碼本身**。資料庫備份外流時，光有這張表不能重設任何人的密碼 |
+| `source` | `SELF_SERVICE`（病人自己按忘記密碼）或 `STAFF`（衛教師當面代開）。研究稽核時看得出是哪一種 |
+| `issuedById` | `STAFF` 來源時，是哪一位工作人員開的。工作人員離職刪帳號時設成 null，紀錄本身留著 |
+| `usedAt` | 用過就填時間，同一組代碼不能用第二次。重新申請時舊的也會一併標記，確保同時只有一組有效 |
+| `expiresAt` | 預設一小時（`PASSWORD_RESET_EXPIRES_IN`）|
+
+代碼本身是 10 個字元、去掉易混淆字元（0/O、1/I/L），因為衛教師需要**唸**給年長病人聽。
 
 ### `PatientProfile`（病人臨床背景）
 跟 `User` 拆開成獨立資料表，是因為帳號資訊（登入用）跟臨床資訊（研究/飲食建議用）

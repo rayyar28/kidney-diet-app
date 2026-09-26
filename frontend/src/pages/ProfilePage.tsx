@@ -19,6 +19,8 @@ export function ProfilePage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const trial = useAuthStore((s) => s.mode === "trial");
+  // 衛教師/研究人員才看得到「協助病人重設密碼」的入口
+  const isStaff = user?.role === "RESEARCHER" || user?.role === "ADMIN";
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const showToast = useToastStore((s) => s.show);
   const pendingCount = useSyncStore((s) => s.pendingCount);
@@ -80,7 +82,12 @@ export function ProfilePage() {
   const earnedCount = badges.filter((b) => b.earned).length;
   // 已獲得的排前面，最多顯示兩排 (8 個)。全部 13 個攤開會超出畫面需要滑動，
   // 而且一整片灰色的未解鎖徽章對病人也不是好的觀感。
-  const shown = [...badges.filter((b) => b.earned), ...badges.filter((b) => !b.earned)].slice(0, 8);
+  //
+  // 工作人員帳號的頁尾多一顆「協助病人重設密碼」，兩排徽章就會把畫面撐到需要滑動，
+  // 所以只留一排。徽章對衛教師本來就沒有意義（他們不是用這個帳號記錄三餐的），
+  // 而且標題那行仍然寫著「已獲得 X / 13 個」，沒有藏掉任何資訊。
+  const badgeLimit = isStaff ? 4 : 8;
+  const shown = [...badges.filter((b) => b.earned), ...badges.filter((b) => !b.earned)].slice(0, badgeLimit);
 
   return (
     <div className="app-shell">
@@ -120,6 +127,11 @@ export function ProfilePage() {
         <button className="btn btn-secondary" onClick={() => navigate("/profile/health")}>
           🩺 我的健康資料
         </button>
+        {isStaff && (
+          <button className="btn btn-secondary" onClick={() => navigate("/staff/reset")}>
+            🔑 協助病人重設密碼
+          </button>
+        )}
         {trial ? (
           <>
             <button className="btn btn-ghost" onClick={endTrial}>

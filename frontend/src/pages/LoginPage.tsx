@@ -78,6 +78,9 @@ export function LoginPage() {
         <Link to="/register" className="btn btn-ghost" style={{ textDecoration: "none" }}>
           還沒有帳號？建立新帳號
         </Link>
+        <Link to="/forgot-password" className="link-btn" style={{ textAlign: "center" }}>
+          忘記密碼？
+        </Link>
         <div className="link-row">
           {/* 不用帳號也能先把流程走一遍（紀錄只存在本機）。第一次開啟 App 時
               「開始使用」畫面已經問過一次，這裡是給已經設定過伺服器的人回頭用的 */}

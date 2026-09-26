@@ -6,7 +6,14 @@ import { prisma } from "../prisma.js";
 import { HttpError } from "../middleware/error.middleware.js";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../utils/jwt.js";
 import { env } from "../config/env.js";
-import { loginLimiter, registerLimiter } from "../middleware/rateLimit.middleware.js";
+import {
+  forgotPasswordLimiter,
+  loginLimiter,
+  registerLimiter,
+  resetPasswordLimiter,
+} from "../middleware/rateLimit.middleware.js";
+import { getMailer } from "../services/mailer.service.js";
+import { buildResetUrl, requestSelfServiceReset, resetPasswordWithCode } from "../services/passwordReset.service.js";
 
 export const authRouter = Router();
 
@@ -122,6 +129,71 @@ authRouter.post("/logout", async (req, res, next) => {
       where: { tokenHash, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 忘記密碼
+// ---------------------------------------------------------------------------
+
+const forgotSchema = z.object({ email: z.string().email() });
+
+/**
+ * 申請重設密碼。
+ *
+ * **不論這個信箱有沒有註冊，一律回 204。** 如果對沒註冊的信箱回不同的結果，
+ * 任何人都可以拿這個端點逐一測試「某某人是不是這個腎臟病研究的受試者」——
+ * 那是會洩漏病情的資訊。
+ *
+ * 寄信不等它完成就先回應，一來避免「有帳號的請求明顯比較慢」這種時間差也變成線索，
+ * 二來寄信商暫時掛掉不該讓病人看到錯誤（他該做的事已經做完了）。
+ */
+authRouter.post("/forgot-password", forgotPasswordLimiter, async (req, res, next) => {
+  try {
+    const body = forgotSchema.parse(req.body);
+    const issued = await requestSelfServiceReset(body.email);
+    res.status(204).send();
+
+    if (!issued) return; // 沒這個帳號，什麼都不做（上面已經回 204 了）
+    const minutes = Math.round(env.passwordResetExpiresMs / 60_000);
+    void getMailer()
+      .sendPasswordReset({
+        to: issued.user.email,
+        displayName: issued.user.displayName,
+        code: issued.code,
+        resetUrl: buildResetUrl(issued.code),
+        expiresInMinutes: minutes,
+      })
+      .catch((err) => {
+        // 寄不出去只能記在 log：不能回報給請求端，否則就等於告訴對方「這個信箱存在」
+        console.error("[auth] 密碼重設信寄送失敗", err);
+      });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const resetSchema = z.object({
+  code: z.string().min(1).max(64),
+  password: z.string().min(8, "密碼至少需要 8 個字元"),
+});
+
+/**
+ * 用代碼設定新密碼。
+ *
+ * 代碼無效 / 已使用 / 已過期都回同一句話：分開講的話，有人就能靠錯誤訊息確認
+ * 「這組代碼曾經存在」，進而推敲出代碼的產生規則。
+ */
+authRouter.post("/reset-password", resetPasswordLimiter, async (req, res, next) => {
+  try {
+    const body = resetSchema.parse(req.body);
+    const outcome = await resetPasswordWithCode(body.code, body.password);
+    if (!outcome.ok) {
+      throw new HttpError(400, "代碼不正確或已失效，請重新申請一組");
+    }
     res.status(204).send();
   } catch (err) {
     next(err);

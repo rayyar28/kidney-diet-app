@@ -184,6 +184,12 @@ cd backend; npm run prisma:studio
 # 後端：改完 schema 後套用變更
 cd backend; npm run prisma:migrate
 
+# 後端：把某個帳號升級成衛教師/研究人員（改完要重新登入才生效）
+cd backend; npm run grant-role -- nurse@hospital.tw RESEARCHER
+
+# 後端：忘記密碼功能的端到端檢查（34 項，含惡意情境）
+cd backend; npm run check:password-reset
+
 # 停掉資料庫
 & "C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe" -D ".devdata\pgdata" stop
 ```
@@ -192,6 +198,8 @@ cd backend; npm run prisma:migrate
 
 **核心記錄**
 - Email + 密碼註冊/登入（JWT access token + 可撤銷的 refresh token）
+- **忘記密碼**：寄一組代碼到信箱，或由衛教師當面開一組給病人（見
+  [ARCHITECTURE.md 的「忘記密碼」](docs/ARCHITECTURE.md)）
 - 一次用餐 = 餐前照 + 餐後照，自動算出用餐時長
 - 頁面內即時相機（`getUserMedia`）＋ 高解析度拍照，也可從相簿選擇
 - 每張照片記錄時間、像素尺寸、檔案大小、雜湊、裝置資訊等研究用中繼資料
