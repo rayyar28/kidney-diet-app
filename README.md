@@ -14,7 +14,7 @@
 
 | | |
 |---|---|
-| **直接下載** | [kidney-diet-trial-v0.2.0.apk](https://github.com/rayyar28/kidney-diet-app/releases/download/v0.2.0-trial/kidney-diet-trial-v0.2.0.apk)（3.9 MB，Android） |
+| **直接下載** | [kidney-diet-trial-v0.3.0.apk](https://github.com/rayyar28/kidney-diet-app/releases/download/v0.3.0-trial/kidney-diet-trial-v0.3.0.apk)（3.9 MB，Android） |
 | **所有版本** | [Releases](https://github.com/rayyar28/kidney-diet-app/releases) |
 
 安裝時 Android 會擋一次「不允許安裝未知的應用程式」，允許瀏覽器安裝即可。
@@ -32,6 +32,9 @@
 | 為年長使用者設計的介面 | ✅ 完成 |
 | **試用模式（不用伺服器、不用帳號就能用）** | ✅ 完成，見下方「給護理師試用」 |
 | 照片壓縮（含 GPS 去識別化） | ✅ 完成 |
+| 紀錄頁月曆、點進某一天看照片 | ✅ 完成 |
+| 忘記密碼（信箱代碼 / 衛教師代開） | ✅ 完成（正式寄信要設定寄信商，見 DEPLOY） |
+| 拍的照片另存到手機相簿 | ✅ 完成，⚠️ 未在實機驗證 |
 | **Android APK（試用版）** | ✅ 可以打包並安裝，見下方「打包 Android APK」 |
 | 正式環境部署（Render + Neon + R2 + Pages） | 📝 設定與手冊已就緒，尚未實際開通帳號 |
 | 食物辨識模型 | ⏳ 尚未選定模型（資料庫已預留） |
@@ -44,8 +47,8 @@
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 整體架構、為什麼這樣選型、離線優先設計、未來怎麼接辨識模型 |
 | [docs/DATABASE.md](docs/DATABASE.md) | 資料庫每張表的設計理由、ER 圖、研究用欄位的用途 |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | 正式環境部署手冊（Render + Neon + R2 + Cloudflare Pages）與費用試算 |
-| [docs/REPORT.md](docs/REPORT.md) | 給醫師/老師看的進度報告（2026-09-11 版本） |
-| [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) | 對外試用前的系統檢查報告（2026-09-11 版本） |
+| [docs/REPORT.md](docs/REPORT.md) | 給醫師/老師看的進度報告。⚠️ **2026-09-11 的快照**，最新進度以上面的「目前狀態」為準 |
+| [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) | 系統檢查報告。⚠️ **2026-09-11 的快照**，之後新增的功能不在該次檢查範圍內 |
 
 ## 使用技術
 
@@ -241,7 +244,7 @@ cd backend; npm run check:password-reset
 - **食物辨識模型**：資料庫已預留 `NutritionEstimate` 表，接上模型時只要新增一個
   背景工作程序把 `NOT_STARTED` 的照片處理成 `COMPLETED`，前端與現有 API 都不用改
 - 忘記拍餐後照的**推播提醒**（目前只有 App 內的提示）
-- 研究人員 / 衛教師後台（`User.role` 已預留 `RESEARCHER` / `ADMIN`）
+- 研究人員 / 衛教師後台看多位病人的資料（目前只做了「幫病人重設密碼」這一項）
 - 檢驗數據（血鈉/血鉀/血磷）與飲食紀錄的相關性分析
 
 ## 已知限制
