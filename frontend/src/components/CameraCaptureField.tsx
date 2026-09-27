@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { saveCameraPhotoToGallery } from "../native/photoGallery";
+
+/** 這張照片是「用這個 App 的相機拍的」還是「從相簿挑的」。只有前者要另存一份到相簿。 */
+type CaptureSource = "camera" | "gallery";
 
 interface Props {
   /** 用在提示文字上，例如「餐前照片」 */
@@ -97,11 +101,14 @@ export function CameraCaptureField({ label, onCapture }: Props) {
     setLiveOpen(false);
   }
 
-  function finishCapture(file: File, capturedAt: Date) {
+  function finishCapture(file: File, capturedAt: Date, source: CaptureSource) {
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old);
       return URL.createObjectURL(file);
     });
+    // 另存一份到手機相簿（只有自己拍的才存，相簿挑的本來就在裡面了）。
+    // 不 await：存相簿慢一點沒關係，不能讓病人在這裡等；失敗也只會安靜地略過。
+    if (source === "camera") void saveCameraPhotoToGallery(file, capturedAt);
     onCapture(file, capturedAt);
     closeCamera();
   }
@@ -113,7 +120,8 @@ export function CameraCaptureField({ label, onCapture }: Props) {
         const blob = await imageCaptureRef.current.takePhoto();
         finishCapture(
           new File([blob], `capture-${capturedAt.getTime()}.jpg`, { type: blob.type || "image/jpeg" }),
-          capturedAt
+          capturedAt,
+          "camera"
         );
         return;
       } catch {
@@ -131,7 +139,11 @@ export function CameraCaptureField({ label, onCapture }: Props) {
     canvas.toBlob(
       (blob) => {
         if (!blob) return;
-        finishCapture(new File([blob], `capture-${capturedAt.getTime()}.jpg`, { type: "image/jpeg" }), capturedAt);
+        finishCapture(
+          new File([blob], `capture-${capturedAt.getTime()}.jpg`, { type: "image/jpeg" }),
+          capturedAt,
+          "camera"
+        );
       },
       "image/jpeg",
       0.92
@@ -140,10 +152,10 @@ export function CameraCaptureField({ label, onCapture }: Props) {
 
   // 相簿選的照片，實際拍攝時間可能早於選取當下（例如挑一張舊照片），
   // 這裡的 capturedAt 只能近似成「選取的當下時間」。
-  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>, source: CaptureSource) {
     const file = e.target.files?.[0];
     if (!file) return;
-    finishCapture(file, new Date());
+    finishCapture(file, new Date(), source);
     e.target.value = ""; // 讓同一張照片可以再選一次
   }
 
@@ -188,14 +200,14 @@ export function CameraCaptureField({ label, onCapture }: Props) {
         accept="image/*"
         capture="environment"
         style={{ display: "none" }}
-        onChange={handleFileChange}
+        onChange={(e) => handleFileChange(e, "camera")}
       />
       <input
         ref={galleryInputRef}
         type="file"
         accept="image/*"
         style={{ display: "none" }}
-        onChange={handleFileChange}
+        onChange={(e) => handleFileChange(e, "gallery")}
       />
 
       {liveOpen && (
