@@ -105,6 +105,7 @@ export async function resetPasswordWithCode(rawCode: string, newPassword: string
   const token = await prisma.passwordResetToken.findUnique({
     where: { codeHash: hashResetCode(normalized) },
   });
+
   if (!token) return { ok: false, reason: "invalid" };
   if (token.usedAt) return { ok: false, reason: "used" };
   if (token.expiresAt < new Date()) return { ok: false, reason: "expired" };

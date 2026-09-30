@@ -5,9 +5,12 @@ import { api, ApiError, NetworkError } from "../api/client";
 /**
  * 用代碼設定新密碼。
  *
- * 代碼可能從兩個地方來：信件裡的連結（帶 ?code=，自動填好）、或是衛教師口頭告訴病人
- * （自己打）。所以欄位一定要能手動輸入，而且要容忍大小寫與有沒有打連字號——
- * 後端會做同樣的正規化。
+ * 代碼可能從兩個地方來：衛教師口頭告訴病人（自己打），或是信件裡的連結（帶 ?code=，
+ * 自動填好）。前者是這個 App 的主要情境——帳號是衛教師建的，病人的信箱不見得通。
+ *
+ * 所以代碼欄位是純數字 + `inputMode="numeric"`：手機會跳出數字鍵盤，鍵大、只有 10 個，
+ * 對手抖、老花的年長病人差別很大。輸入時只看數字，多打空格或連字號都沒關係
+ * （後端會做同樣的正規化）。
  */
 export function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -74,18 +77,22 @@ export function ResetPasswordPage() {
 
       <form id="reset-form" className="page" onSubmit={onSubmit}>
         <div className="field">
-          <label className="label">重設代碼</label>
+          <label className="label">重設代碼（8 個數字）</label>
           <input
             className="input input-code"
             type="text"
-            inputMode="text"
-            autoCapitalize="characters"
+            inputMode="numeric"
+            autoComplete="one-time-code"
             autoCorrect="off"
             spellCheck={false}
-            placeholder="ABCDE-FGHIJ"
+            placeholder="4728 1935"
             required
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            // 只留數字，並自動在中間補一個空格，讓病人看得出自己打到第幾個
+            onChange={(e) => {
+              const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
+              setCode(digits.length > 4 ? `${digits.slice(0, 4)} ${digits.slice(4)}` : digits);
+            }}
           />
         </div>
         <div className="field">

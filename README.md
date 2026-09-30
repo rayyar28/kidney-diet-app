@@ -190,7 +190,7 @@ cd backend; npm run prisma:migrate
 # 後端：把某個帳號升級成衛教師/研究人員（改完要重新登入才生效）
 cd backend; npm run grant-role -- nurse@hospital.tw RESEARCHER
 
-# 後端：忘記密碼功能的端到端檢查（34 項，含惡意情境）
+# 後端：忘記密碼功能的端到端檢查（36 項，含惡意情境）
 cd backend; npm run check:password-reset
 
 # 停掉資料庫
@@ -201,7 +201,8 @@ cd backend; npm run check:password-reset
 
 **核心記錄**
 - Email + 密碼註冊/登入（JWT access token + 可撤銷的 refresh token）
-- **忘記密碼**：寄一組代碼到信箱，或由衛教師當面開一組給病人（見
+- **忘記密碼**：衛教師當面開一組 **8 位數字**的代碼給病人（主要方式，因為帳號是衛教師建的、
+  病人的信箱不見得通），也可以寄到信箱。輸入時是數字鍵盤，對年長病人友善（見
   [ARCHITECTURE.md 的「忘記密碼」](docs/ARCHITECTURE.md)）
 - 一次用餐 = 餐前照 + 餐後照，自動算出用餐時長
 - 頁面內即時相機（`getUserMedia`）＋ 高解析度拍照，也可從相簿選擇

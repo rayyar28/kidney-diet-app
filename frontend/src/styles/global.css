@@ -490,12 +490,13 @@ button {
   background: rgba(47, 111, 94, 0.12);
 }
 
-/* 重設代碼：衛教師要唸給病人聽，所以字要大、字距要拉開，唸錯的機會才低 */
+/* 重設代碼：衛教師要唸給病人聽，所以字要大、字距要拉開，唸錯的機會才低。
+   純數字（8 位）比原本的英數字母好唸也好打，字距可以再拉開一點 */
 .reset-code {
   font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
   font-size: var(--fs-num);
   font-weight: 700;
-  letter-spacing: 3px;
+  letter-spacing: 4px;
   color: var(--color-primary);
   background: var(--color-surface);
   border: 2px dashed var(--color-primary);
@@ -506,11 +507,13 @@ button {
   user-select: all; /* 點一下就整組選起來，方便複製 */
 }
 
-/* 代碼輸入框：同樣用等寬字，病人比對自己打的跟拿到的是不是同一組 */
+/* 代碼輸入框：等寬字 + 大字距，病人比對自己打的跟拿到的是不是同一組。
+   字放大到跟數字統計一樣大，因為這是年長病人在這個 App 裡唯一要打的一串數字 */
 .input-code {
   font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
-  letter-spacing: 2px;
-  text-transform: uppercase;
+  font-size: var(--fs-xl);
+  letter-spacing: 4px;
+  text-align: center;
 }
 
 /* 文字連結樣式的按鈕：次要入口用，不佔一整顆按鈕的高度 */

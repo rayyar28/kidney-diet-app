@@ -60,7 +60,7 @@ async function post(path, body, token, ip = freshIp()) {
 async function waitForMailedCode(afterOffset) {
   for (let i = 0; i < 40; i += 1) {
     const fresh = serverOut.slice(afterOffset);
-    const m = /([2-9A-HJ-NP-Z]{5}-[2-9A-HJ-NP-Z]{5})/.exec(fresh);
+    const m = /(\d{4} \d{4})/.exec(fresh);
     if (m) return m[1];
     await sleep(100);
   }
@@ -106,14 +106,17 @@ async function run() {
     const before = serverOut.length;
     await post("/auth/forgot-password", { email: flowEmail });
     const code = await waitForMailedCode(before);
-    check("信件裡有一組 XXXXX-XXXXX 的代碼", Boolean(code), String(code));
+    check("信件裡有一組 8 位數字的代碼", Boolean(code), String(code));
     if (!code) return;
 
     const stored = await prisma.passwordResetToken.findFirst({
       where: { user: { email: flowEmail } },
       orderBy: { createdAt: "desc" },
     });
-    check("資料庫存的是雜湊，不是代碼本身", Boolean(stored) && !JSON.stringify(stored).includes(code.replace("-", "")));
+    check(
+      "資料庫存的是雜湊，不是代碼本身",
+      Boolean(stored) && !JSON.stringify(stored).includes(code.replace(" ", ""))
+    );
     check("來源標記為 SELF_SERVICE", stored?.source === "SELF_SERVICE", stored?.source);
 
     // 先登入拿一組 refresh token，待會驗證重設後會不會被撤銷
@@ -144,9 +147,27 @@ async function run() {
     const before = serverOut.length;
     await post("/auth/forgot-password", { email });
     const code = await waitForMailedCode(before);
-    const messy = ` ${code.replace("-", "").toLowerCase()} `; // 小寫、沒有連字號、前後有空白
+    const messy = ` ${code.replace(" ", "-")} `; // 中間打成連字號、前後有空白
     const res = await post("/auth/reset-password", { code: messy, password: "Sloppy12345" });
-    check("小寫 / 沒打連字號 / 前後空白照樣可以用", res.status === 204, `${res.status} 送出的是「${messy}」`);
+    check("連字號 / 前後空白 / 連著打照樣可以用", res.status === 204, `${res.status} 送出的是「${messy}」`);
+
+    // 代碼是補零到 8 位的，所以會有 0 開頭的。任何一處把它當成數字處理就會掉前導零，
+    // 那個 bug 只會發生在十分之一的病人身上，很難從回報裡看出規律——所以固定檢查。
+    const zeroEmail = emailFor("leadingzero");
+    await register(zeroEmail);
+    let zeroCode = null;
+    for (let i = 0; i < 40 && !zeroCode; i += 1) {
+      const mark = serverOut.length;
+      await post("/auth/forgot-password", { email: zeroEmail });
+      const c = await waitForMailedCode(mark);
+      if (c && c.startsWith("0")) zeroCode = c;
+    }
+    if (!zeroCode) {
+      check("抽到一組 0 開頭的代碼來測", false, "試了 40 次都沒抽到（機率上幾乎不可能）");
+    } else {
+      const zeroRes = await post("/auth/reset-password", { code: zeroCode, password: "LeadingZero1" });
+      check("0 開頭的代碼可以正常使用", zeroRes.status === 204, `${zeroRes.status} 代碼是「${zeroCode}」`);
+    }
   }
 
   console.log("\n=== 4. 猜不到、也繞不過 ===");
@@ -157,21 +178,33 @@ async function run() {
     await post("/auth/forgot-password", { email });
     const code = await waitForMailedCode(before);
 
-    const bogus = await post("/auth/reset-password", { code: "AAAAA-BBBBB", password: "Whatever123" });
+    const bogus = await post("/auth/reset-password", { code: "1234 5678", password: "Whatever123" });
     check("亂猜一組合法格式的代碼會被拒絕", bogus.status === 400, String(bogus.status));
 
-    const tooShort = await post("/auth/reset-password", { code: "ABC", password: "Whatever123" });
+    const tooShort = await post("/auth/reset-password", { code: "1234", password: "Whatever123" });
     check("長度不對的代碼會被拒絕", tooShort.status === 400, String(tooShort.status));
 
-    const illegal = await post("/auth/reset-password", { code: "OOOOO-IIIII", password: "Whatever123" });
-    check("含排除字元（O/I）的代碼會被拒絕", illegal.status === 400, String(illegal.status));
+    const illegal = await post("/auth/reset-password", { code: "ABCD EFGH", password: "Whatever123" });
+    check("非數字的代碼會被拒絕", illegal.status === 400, String(illegal.status));
+
+    // 亂猜不能把別人正在用的代碼弄壞（曾經寫成「猜錯就把所有有效代碼加一次失敗」，
+    // 那會變成任何人送幾組亂碼就能讓全系統重設中的病人一起作廢）
+    for (let i = 0; i < 6; i += 1) {
+      await post("/auth/reset-password", { code: String(10000000 + i), password: "Whatever123" });
+    }
+    const survived = await post("/auth/reset-password", { code, password: "SurvivedGuessing1" });
+    check("別人亂猜不會讓我手上的代碼失效", survived.status === 204, String(survived.status));
 
     const messages = new Set([bogus.body?.error, tooShort.body?.error, illegal.body?.error]);
     check("各種失敗回同一句話，問不出代碼是否存在", messages.size === 1, [...messages].join(" / "));
 
-    const weak = await post("/auth/reset-password", { code, password: "short" });
+    // 換一組新的來驗「密碼太短時代碼不會被消耗掉」
+    const before2 = serverOut.length;
+    await post("/auth/forgot-password", { email });
+    const code2 = await waitForMailedCode(before2);
+    const weak = await post("/auth/reset-password", { code: code2, password: "short" });
     check("密碼太短會被擋下", weak.status === 400, String(weak.status));
-    const stillUsable = await post("/auth/reset-password", { code, password: "LongEnough123" });
+    const stillUsable = await post("/auth/reset-password", { code: code2, password: "LongEnough123" });
     check("被擋下時代碼沒有被消耗掉（還能再用）", stillUsable.status === 204, String(stillUsable.status));
   }
 
@@ -260,7 +293,7 @@ async function run() {
     const guesserIp = "203.0.113.99";
     let resetBlocked = false;
     for (let i = 0; i < 14; i += 1) {
-      const res = await post("/auth/reset-password", { code: "AAAAA-BBBBB", password: "Whatever123" }, null, guesserIp);
+      const res = await post("/auth/reset-password", { code: "1234 5678", password: "Whatever123" }, null, guesserIp);
       if (res.status === 429) {
         resetBlocked = true;
         break;

@@ -59,7 +59,9 @@ export function StaffResetPage() {
         </div>
 
         <div className="page page-center">
-          <p className="page-hint">請把這組代碼唸給病人，讓他在 App 的「忘記密碼」輸入</p>
+          <p className="page-hint">
+            請把這 8 個數字唸給病人，讓他在 App 的「忘記密碼 → 我有代碼了」輸入
+          </p>
           <div className="reset-code">{issued.code}</div>
           <p className="page-hint" style={{ maxWidth: 320 }}>
             {issued.expiresInMinutes} 分鐘內有效，只能使用一次。離開這一頁之後就看不到了，
