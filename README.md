@@ -47,6 +47,8 @@
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 整體架構、為什麼這樣選型、離線優先設計、未來怎麼接辨識模型 |
 | [docs/DATABASE.md](docs/DATABASE.md) | 資料庫每張表的設計理由、ER 圖、研究用欄位的用途 |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | 正式環境部署手冊（Render + Neon + R2 + Cloudflare Pages）與費用試算 |
+| [docs/MEETING_0930.md](docs/MEETING_0930.md) | **最新的進度報告**（09/22–09/30）：本週完成什麼、卡在哪、需要老師決定什麼 |
+| [docs/MEETING_0916.md](docs/MEETING_0916.md) | 前一期進度報告（09/16–09/22），另有[一頁版](docs/MEETING_0916_onepage.md) |
 | [docs/REPORT.md](docs/REPORT.md) | 給醫師/老師看的進度報告。⚠️ **2026-09-11 的快照**，最新進度以上面的「目前狀態」為準 |
 | [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) | 系統檢查報告。⚠️ **2026-09-11 的快照**，之後新增的功能不在該次檢查範圍內 |
 
