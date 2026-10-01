@@ -39,8 +39,9 @@ services:
         generateValue: true
       - key: JWT_ACCESS_EXPIRES_IN
         value: 15m
+      # 登入狀態的維持時間。預設一年，不是安全參數而是可用性參數（見 backend/.env.example）
       - key: JWT_REFRESH_EXPIRES_IN
-        value: 30d
+        value: 365d
 
       # --- 允許的前端來源（Cloudflare Pages 網址）---
       # 可用逗號分隔多組，例如正式網址 + 預覽網址

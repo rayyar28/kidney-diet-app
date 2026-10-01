@@ -12,13 +12,14 @@
 | `README.md` | 目前狀態、怎麼啟動、怎麼打包 APK |
 | `docs/ARCHITECTURE.md` | 架構與**每個決定的理由**（離線優先、試用模式、忘記密碼、存相簿） |
 | `docs/DATABASE.md` | 每張表為什麼長這樣 |
-| `docs/DEPLOY.md` | 部署手冊 + **正式收案前必須完成的清單** |
+| `docs/DEPLOY.md` | 部署手冊（方案 A：雲端，**現為備案**）+ **正式收案前必須完成的清單** |
+| `docs/DEPLOY_HOSPITAL.md` | **現行部署方向**：醫院電腦自架 + 院內 Wi-Fi。含資訊室要問什麼、HTTPS/憑證、服務化、APK 打包、備份、故障排除 |
 | `docs/MEETING_0930.md` | 最新進度、卡住的決定 |
 
 **過期、不要照著做的文件**（保留是為了歷史紀錄）：
 
 - `Claude outputs/部署指南.md`（2026-09-14）—— 描述的是舊的「學校電腦自架 + Cloudflare Tunnel」方案，
-  跟現在的 `docs/DEPLOY.md` **互相矛盾**，以 `docs/DEPLOY.md` 為準
+  跟現在的部署方向 **互相矛盾**，以 `docs/DEPLOY_HOSPITAL.md`（現行）與 `docs/DEPLOY.md`（備案）為準
 - `Claude outputs/程式碼檢視報告.md`、`docs/REPORT.md`、`docs/SECURITY_AUDIT.md` ——
   都是 9/11–9/14 的快照，之後新增的功能不在範圍內
 

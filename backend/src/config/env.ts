@@ -49,10 +49,22 @@ export const env = {
   jwtAccessSecret: required("JWT_ACCESS_SECRET"),
   jwtRefreshSecret: required("JWT_REFRESH_SECRET"),
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? "15m",
-  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "30d",
+  /**
+   * 登入狀態可以維持多久沒有連上伺服器。**預設一年，通常不需要動它。**
+   *
+   * 這不是一個安全參數，是一個可用性參數。縮短它在這個系統裡幾乎沒有防護價值：
+   * 資料庫存的是雜湊不是 token 本身、每次換發都會輪替（偷到一組只能用一次）、
+   * 前端沒有 XSS 注入面，而真正的威脅（有人拿到病人沒鎖的手機）直接開 App 就看得到全部。
+   * 要停掉某個人的存取是用 revokedAt 撤銷或刪帳號，不是等它過期。
+   *
+   * 反過來，設太短會**確定**出事：一般門診病人 2~3 個月才回診一次，如果憑證先過期，
+   * 他會在回診現場發現被登出——而他的帳號是衛教師建的，他可能從來不知道密碼。
+   * 一年比任何回診間隔都長，但仍然有界限，手機放著不用總會失效。
+   */
+  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? "365d",
   // 資料庫那一筆 refresh token 的到期時間，一定要跟上面的 JWT 效期算出同一個值。
   // 啟動時就解析，設定寫錯會立刻失敗，而不是等到有人登入才出問題。
-  jwtRefreshExpiresMs: parseDurationMs(process.env.JWT_REFRESH_EXPIRES_IN ?? "30d"),
+  jwtRefreshExpiresMs: parseDurationMs(process.env.JWT_REFRESH_EXPIRES_IN ?? "365d"),
 
   corsOrigins: parseOrigins(process.env.CORS_ORIGIN ?? "http://localhost:5173"),
 

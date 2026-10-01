@@ -3,6 +3,10 @@
 專案：`rayyar28/kidney-diet-app`
 最後更新：2026-09-14
 
+> **2026-10-01：部署方向已改為「醫院電腦自架、院內 Wi-Fi」，請看 [DEPLOY_HOSPITAL.md](./DEPLOY_HOSPITAL.md)。**
+> 這份（方案 A：Render + Neon + R2）保留作為備案，兩份的架構互相排斥，不要混著做。
+> 「正式收案前必須完成」那一節仍然有效，兩個方案都適用。
+
 ```
 病人手機
    │ HTTPS
@@ -220,9 +224,6 @@ docker compose up --build
       ⚠ **必須在壓縮之前讀取**，因為壓縮會把 EXIF 移除。
 - [ ] `participantCode` 假名化欄位
 - [ ] 同意書欄位 `consentedAt` / `consentVersion` / `withdrawnAt`
-- [ ] **確認 `JWT_REFRESH_EXPIRES_IN` 符合收案族群的回診間隔** — 病人多久會連上伺服器
-      一次，就決定這個值要多大。洗腎病人（一週三次）30d 夠用；一般門診 2~3 個月回診
-      一次要設 180d 以上，否則病人帶著累積的紀錄回診時會發現被登出。
 - [ ] **設定好寄信**（`MAIL_DRIVER=resend` + 已驗證網域）並實際收一封重設信。
       沒設的話病人按「忘記密碼」會看到成功畫面，但信永遠不會到——這是最容易漏掉的一項，
       因為開發時的 console 模式看起來一切正常。
