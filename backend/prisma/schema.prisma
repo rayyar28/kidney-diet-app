@@ -20,24 +20,18 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 // ============================== 使用者 / 帳號 ==============================
-
-enum UserRole {
-  PATIENT
-  RESEARCHER
-  ADMIN
-}
 
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
   passwordHash String
   displayName  String
-  role         UserRole @default(PATIENT)
+  role         String   @default("PATIENT") // PATIENT | RESEARCHER | ADMIN
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -70,41 +64,17 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-enum Sex {
-  MALE
-  FEMALE
-  OTHER
-}
-
-// 慢性腎臟病分期，供研究時分層分析使用
-enum CkdStage {
-  STAGE_1
-  STAGE_2
-  STAGE_3A
-  STAGE_3B
-  STAGE_4
-  STAGE_5
-  TRANSPLANT
-  UNKNOWN
-}
-
-enum DialysisType {
-  NONE
-  HEMODIALYSIS
-  PERITONEAL_DIALYSIS
-}
-
 // 病人臨床背景資料，與 User 是 1:1。獨立成表是為了讓 User 保持單純的帳號資訊，
 // 未來若要加入更多臨床欄位 (如用藥、檢驗值來源…) 不會動到帳號/認證相關邏輯。
 model PatientProfile {
-  userId       String       @id
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String    @id
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   dateOfBirth  DateTime?
-  sex          Sex?
+  sex          String? // MALE | FEMALE | OTHER
   heightCm     Float?
   weightKg     Float?
-  ckdStage     CkdStage     @default(UNKNOWN)
-  dialysisType DialysisType @default(NONE)
+  ckdStage     String    @default("UNKNOWN") // STAGE_1 | STAGE_2 | STAGE_3A | STAGE_3B | STAGE_4 | STAGE_5 | TRANSPLANT | UNKNOWN
+  dialysisType String    @default("NONE") // NONE | HEMODIALYSIS | PERITONEAL_DIALYSIS
 
   // 每日攝取目標上限，由病人自填或未來由衛教師設定，供 App 做「今日是否超標」提示，
   // 也是未來辨識功能算出攝取量後，要比對的基準值。單位固定用 mg / g / ml，
@@ -123,19 +93,6 @@ model PatientProfile {
 
 // ============================== 用餐紀錄 ==============================
 
-enum MealType {
-  BREAKFAST
-  LUNCH
-  DINNER
-  SNACK
-}
-
-enum MealRecordStatus {
-  AWAITING_POST_PHOTO // 已拍餐前照，等待餐後照
-  COMPLETED // 餐前/餐後皆已完成
-  ABANDONED // 病人主動放棄這筆紀錄 (例如忘記拍餐後照太久)
-}
-
 // 一次用餐事件。餐前/餐後照片各自是一筆 Photo，用 phase 區分，
 // 兩者的時間差 = mealDurationSeconds，滿足「推算用餐時間」的需求。
 model MealRecord {
@@ -143,8 +100,8 @@ model MealRecord {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  mealType MealType
-  status   MealRecordStatus @default(AWAITING_POST_PHOTO)
+  mealType String // BREAKFAST | LUNCH | DINNER | SNACK
+  status   String @default("AWAITING_POST_PHOTO") // AWAITING_POST_PHOTO | COMPLETED | ABANDONED
 
   preMealAt           DateTime // 餐前照拍攝時間 (client 回報)
   postMealAt          DateTime? // 餐後照拍攝時間 (完成後才有值)
@@ -169,11 +126,6 @@ model MealRecord {
   @@map("meal_records")
 }
 
-enum PhotoPhase {
-  PRE_MEAL
-  POST_MEAL
-}
-
 // 每一張照片的完整技術中繼資料。刻意記錄得比目前功能需要的更詳細一點，
 // 是因為這些欄位在「辨識模型還沒選定」的階段最有研究價值
 // (例如：不同像素/檔案大小/裝置的照片，之後跑辨識模型的準確率是否有差異)。
@@ -183,7 +135,7 @@ model Photo {
   user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   mealRecordId String
   mealRecord   MealRecord @relation(fields: [mealRecordId], references: [id], onDelete: Cascade)
-  phase        PhotoPhase
+  phase        String // PRE_MEAL | POST_MEAL
 
   // 檔案本身
   storageKey       String  @unique // 在 storage provider 內的相對路徑/物件 key，不寫死本機路徑
@@ -225,13 +177,6 @@ model Photo {
 
 // ============================== 營養辨識（預留） ==============================
 
-enum NutritionEstimateStatus {
-  NOT_STARTED
-  PROCESSING
-  COMPLETED
-  FAILED
-}
-
 // 現階段完全不會被填值的「預留表」。每張 Photo 上傳時都會建立一筆
 // status = NOT_STARTED 的紀錄，未來辨識模型上線後，只要新增一個背景服務
 // 把 NOT_STARTED 的資料轉成 COMPLETED（或 FAILED）即可，前端/其餘 API
@@ -241,7 +186,7 @@ model NutritionEstimate {
   photoId String @unique
   photo   Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
 
-  status       NutritionEstimateStatus @default(NOT_STARTED)
+  status       String  @default("NOT_STARTED") // NOT_STARTED | PROCESSING | COMPLETED | FAILED
   modelName    String? // 例如 "food-nutrition-vit-v1"，方便比較不同模型版本的表現
   modelVersion String?
 
@@ -254,7 +199,8 @@ model NutritionEstimate {
   calorieKcal     Float?
   confidenceScore Float? // 0~1，模型對這次估計的信心程度
 
-  rawModelOutput Json? // 原始模型輸出 (未轉換單位前)，方便除錯與重新校正
+  rawModelOutput String? // 原始模型輸出的 JSON 字串 (未轉換單位前)，方便除錯與重新校正。
+  // SQLite 沒有 Json 型別，所以存成字串；讀取時自己 JSON.parse
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -264,27 +210,18 @@ model NutritionEstimate {
 
 // ============================== 遊戲化 ==============================
 
-enum PointsReason {
-  PRE_MEAL_LOGGED
-  POST_MEAL_LOGGED
-  DAILY_ALL_MEALS_BONUS
-  STREAK_MILESTONE
-  BADGE_AWARDED
-  MANUAL_ADJUSTMENT
-}
-
 // 點數帳本：只增不改的事件紀錄 (event-sourced)，目前總點數 = SUM(points)。
 // 好處：完整歷程可回溯，未來要分析「什麼行為驅動使用者持續紀錄」時，
 // 這張表就是現成的行為事件資料。
 model PointsLedgerEntry {
-  id           String       @id @default(uuid())
+  id           String      @id @default(uuid())
   userId       String
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   points       Int
-  reason       PointsReason
+  reason       String // PRE_MEAL_LOGGED | POST_MEAL_LOGGED | DAILY_ALL_MEALS_BONUS | STREAK_MILESTONE | BADGE_AWARDED | MANUAL_ADJUSTMENT
   mealRecordId String?
-  mealRecord   MealRecord?  @relation(fields: [mealRecordId], references: [id], onDelete: SetNull)
-  createdAt    DateTime     @default(now())
+  mealRecord   MealRecord? @relation(fields: [mealRecordId], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
 
   @@index([userId, createdAt])
   @@map("points_ledger_entries")
@@ -331,33 +268,25 @@ model UserBadge {
   @@map("user_badges")
 }
 
-/// 密碼重設代碼的來源，研究稽核時可以看出是病人自己申請的還是工作人員代開的
-enum PasswordResetSource {
-  /// 病人在 App 按「忘記密碼」，代碼寄到他自己的信箱
-  SELF_SERVICE
-  /// 衛教師/研究人員當面確認身分後代開（病人連信箱都進不去時的唯一辦法）
-  STAFF
-}
-
 /// 一次性的密碼重設代碼。
 ///
 /// 只存雜湊，不存代碼本身：資料庫萬一外流，光靠這張表不能重設任何人的密碼。
 /// 代碼是 10 個字元（去掉 0/O/1/I/L 等易混淆字），設計成「唸得出來、打得進去」，
 /// 因為衛教師需要口頭把代碼告訴病人，而病人是年長者。
 model PasswordResetToken {
-  id         String              @id @default(uuid())
+  id         String    @id @default(uuid())
   userId     String
-  user       User                @relation("ResetForUser", fields: [userId], references: [id], onDelete: Cascade)
+  user       User      @relation("ResetForUser", fields: [userId], references: [id], onDelete: Cascade)
   /// sha256(正規化後的代碼)
-  codeHash   String              @unique
-  source     PasswordResetSource @default(SELF_SERVICE)
+  codeHash   String    @unique
+  source     String    @default("SELF_SERVICE") // SELF_SERVICE | STAFF
   /// STAFF 來源時，是哪一位工作人員開的
   issuedById String?
-  issuedBy   User?               @relation("ResetIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  issuedBy   User?     @relation("ResetIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
   expiresAt  DateTime
   /// 用過就填上時間，同一組代碼不能用第二次
   usedAt     DateTime?
-  createdAt  DateTime            @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])

@@ -1,0 +1,11 @@
+# docker-entrypoint.prod.sh 在容器裡是用 /bin/sh 執行的。
+# Git for Windows 預設 core.autocrlf=true，clone 下來會把它轉成 CRLF，
+# 容器啟動時會噴 "exec ./docker-entrypoint.prod.sh: no such file or directory"
+# —— 檔案明明在，錯誤訊息卻說找不到，非常難查。強制這類檔案用 LF。
+*.sh text eol=lf
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
+*.bat text eol=crlf
+*.jks binary
+*.keystore binary
+*.apk binary

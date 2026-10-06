@@ -1,0 +1,11 @@
+# 不要把 Windows 上裝的 node_modules 複製進 Linux 容器：
+# Dockerfile.prod 是先 npm ci 再 COPY . .，沒有這個檔案的話，
+# host 的 node_modules 會覆蓋掉容器裡剛裝好的那一份，
+# 而 sharp 和 prisma 的執行檔是平台相依的 —— 結果是啟動就炸，訊息看起來還很不相干。
+node_modules
+dist
+uploads
+.env
+.env.*
+!.env.example
+*.log

@@ -13,6 +13,14 @@ dist
 !.env.production.example
 
 *.local
+
+# SQLite 資料庫本體（含 WAL 的兩個附檔）。這是病人的資料，絕對不能進版控。
+backend/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 backend/uploads/*
 !backend/uploads/.gitkeep
 .devdata/

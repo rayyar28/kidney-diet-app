@@ -1,7 +1,16 @@
 # 資料庫設計說明
 
 完整定義在 [backend/prisma/schema.prisma](../backend/prisma/schema.prisma)，這份文件解釋
-「為什麼這樣設計」。資料庫是 PostgreSQL，透過 Prisma migration 管理版本。
+「為什麼這樣設計」。資料庫是 **SQLite**（整個資料庫就是 `backend/data/kidney.db` 一個檔案），
+透過 Prisma migration 管理版本。
+
+> **關於列舉欄位**：`role`、`mealType`、`status`、`phase`、`reason` 這些欄位在 schema 裡是
+> `String`，不是資料庫層的 enum——Prisma 的 SQLite connector 不支援 enum。允許的值寫在
+> 每個欄位後面的註解裡，型別定義在
+> [`backend/src/domain/enums.ts`](../backend/src/domain/enums.ts)，而真正擋住外部輸入的是
+> API 邊界的 `z.enum([...])`。改動允許值時這三個地方要一起改。
+>
+> 同理 `rawModelOutput` 是 `String?` 存 JSON 字串，SQLite 沒有 Json 型別。
 
 ## ER 圖
 

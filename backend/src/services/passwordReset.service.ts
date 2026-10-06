@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import type { PasswordResetSource } from "@prisma/client";
+import type { PasswordResetSource } from "../domain/enums.js";
 import { prisma } from "../prisma.js";
 import { env } from "../config/env.js";
 import { generateResetCode, hashResetCode, isWellFormedResetCode, normalizeResetCode } from "../utils/resetCode.js";

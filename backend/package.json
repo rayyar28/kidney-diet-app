@@ -13,7 +13,8 @@
     "prisma:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
     "grant-role": "tsx scripts/grant-role.ts",
-    "check:password-reset": "node scripts/check-password-reset.mjs"
+    "check:password-reset": "node scripts/check-password-reset.mjs",
+    "backup:db": "node scripts/backup-db.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

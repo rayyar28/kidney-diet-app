@@ -6,7 +6,7 @@
 
 ## 一句話總覽
 
-**PWA 前端（離線優先：本機先存、背景同步）→ Express API（驗證、業務邏輯）→ PostgreSQL（結構化資料）+ 儲存服務（照片，本機磁碟或 Cloudflare R2）**
+**PWA 前端（離線優先：本機先存、背景同步）→ Express API（驗證、業務邏輯）→ SQLite（結構化資料）+ 儲存服務（照片，本機磁碟或 Cloudflare R2）**
 
 ```mermaid
 flowchart LR
@@ -20,7 +20,7 @@ flowchart LR
 
     subgraph 伺服器
         API["Express API<br/>(JWT 驗證、用餐邏輯、遊戲化邏輯、可重送)"]
-        DB[("PostgreSQL<br/>結構化資料")]
+        DB[("SQLite<br/>結構化資料")]
         FS[("StorageService<br/>本機磁碟 (開發) / Cloudflare R2 (正式)")]
     end
 
@@ -48,16 +48,39 @@ flowchart LR
 |---|---|---|
 | 前端平台 | **PWA**（React + Vite + TypeScript，`vite-plugin-pwa`） | 不用上架 App Store/Play Store 就能讓病人「加到主畫面」像 App 一樣使用；瀏覽器的相機 API 就能直接叫出手機相機，開發與展示都最快。同一份程式碼未來也是包成 Capacitor 原生 App（見「離線優先設計」與 Android 上架規劃）的起點 |
 | 後端 | **Node.js + Express + TypeScript** | 生態成熟、開發速度快，跟前端共用 TypeScript 型別觀念，降低專題團隊的學習成本 |
-| 資料庫 | **PostgreSQL + Prisma ORM** | 關聯式資料庫最適合這種「病人-用餐-照片-辨識結果」高度結構化、彼此有明確關聯的資料；Prisma 讓 schema 即文件、migration 自動產生，也方便未來老師/口委看 schema 就懂資料設計 |
+| 資料庫 | **SQLite + Prisma ORM** | 關聯式資料庫最適合這種「病人-用餐-照片-辨識結果」高度結構化、彼此有明確關聯的資料；Prisma 讓 schema 即文件、migration 自動產生。選 SQLite 而不是 PostgreSQL 的理由見下方「為什麼是 SQLite」 |
 | 照片儲存 | **`StorageService` 介面，兩種實作**：本機磁碟（開發用）、**Cloudflare R2**（正式環境用，已實作） | 業務邏輯只認得介面（`save` / `read` / `getSignedReadUrl`），不需要知道實際存在哪裡；正式環境設 `STORAGE_DRIVER=r2`，後端幫每張照片簽發短效直連網址，讓瀏覽器直接跟 R2 拿檔案，照片流量不經過後端主機、也不用付流量費（見 `backend/src/services/storage.service.ts`） |
-| 本機開發環境 | **原生安裝 Node.js + PostgreSQL**，用 `start-dev.ps1` 一鍵啟動 | 原本規劃用 Docker Compose，但 Windows 上的 Docker Desktop 遇到一個持續性的系統 bug（AF_UNIX socket reparse point）導致完全無法啟動，且排查多種方式都無法解決，所以改成原生安裝：PostgreSQL 用使用者自己的資料目錄（不透過 Windows 服務，繞開沒有系統管理員權限的限制），`start-dev.ps1` 依序啟動資料庫、後端、前端。`docker-compose.yml` 還留在專案裡，換到 Linux/Mac 或修好 Docker 的環境時可以直接用 |
-| 正式環境部署 | **Render（後端）+ Neon（PostgreSQL）+ Cloudflare R2（照片）+ Cloudflare Pages（前端）** | 都有可用的免費/低價方案，前後端分離部署，細節與費用試算見 [DEPLOY.md](./DEPLOY.md) |
+| 本機開發環境 | **只要 Node.js**，用 `start-dev.ps1` 一鍵啟動後端與前端 | 資料庫是一個檔案，沒有服務要啟動、沒有連線字串要設、沒有權限問題。（改用 SQLite 之前，這台沒有系統管理員權限的開發機得用 `pg_ctl` 手動啟動一個獨立的 PostgreSQL 叢集才能跑起來。）|
+| 正式環境部署 | **醫院內自架**（Docker：後端 + Caddy，資料全部留在院內）。雲端方案（Render + Neon + R2 + Pages）降為備案 | 病人只在回診時連院內 Wi-Fi 同步，資料不離開醫院，IRB 上單純很多。見 [DEPLOY_HOSPITAL.md](./DEPLOY_HOSPITAL.md)；雲端備案見 [DEPLOY.md](./DEPLOY.md) |
+
+## 為什麼是 SQLite
+
+**直接的原因**：合作方的資料庫也是 SQLite，專題需要兩邊一致。這是決定事項，不是技術取捨。
+
+但以這個系統的條件來看，它本來就不是一個勉強的選擇：
+
+- **資料量很小。** 照片是存在檔案系統（`StorageService`）的，資料庫裡只有文字和數字。
+  30 位病人記錄 3 個月大約幾十 MB。
+- **寫入是零星的。** 病人回診時同步，不是持續高併發。SQLite 同時只允許一個寫入者，
+  但配合 WAL 模式（讀寫可以並行）與 Prisma 預設的 5 秒 busy timeout，這個規模碰不到瓶頸。
+- **部署少一個服務。** 醫院那台機器不用裝資料庫、不用顧一個額外的容器、沒有資料庫密碼要管，
+  備份也從「dump 再還原」變成「產生一個檔案」。
+
+### 換過來要付出的代價
+
+| 限制 | 影響 | 怎麼處理 |
+|---|---|---|
+| **不支援 enum** | 原本 10 個 enum 欄位變成 `String` | 允許值寫在 schema 的欄位註解，型別在 [`src/domain/enums.ts`](../backend/src/domain/enums.ts)，真正擋輸入的是 API 邊界的 `z.enum([...])`。驗證從資料庫層移到編譯期 + 請求邊界 |
+| **不支援 Json** | `rawModelOutput` 變成 `String?` | 存 JSON 字串，讀取時自己 `JSON.parse` |
+| **WAL 不是預設** | 不開的話，有人寫入時所有讀取都被擋住 | 後端啟動時執行一次 `PRAGMA journal_mode = WAL`（見 `src/prisma.ts`）|
+| **不能直接複製檔案當備份** | WAL 模式下內容分散在 `.db` 與 `.db-wal`，複製會拿到不完整的快照 | `npm run backup:db`，走 SQLite 內建的 `VACUUM INTO` 線上備份 |
+| **Render 免費方案存不住** | 容器檔案系統是 ephemeral，重啟就清空 | 那是備案（方案 A）。真要用得掛 Persistent Disk，或那條路改回 PostgreSQL。`render.yaml` 裡有警告 |
 
 ## 資料夾結構
 
 ```
 claude_app/
-├─ start-dev.ps1            # 本機開發：啟動 PostgreSQL + 後端 + 前端 (取代 Docker)
+├─ start-dev.ps1            # 本機開發：啟動後端 + 前端（SQLite 不需要啟動服務）
 ├─ docker-compose.yml       # 保留給 Docker 環境正常的電腦使用，本機開發預設不用
 ├─ render.yaml              # Render Blueprint，正式環境部署設定
 ├─ docs/                    # 這份文件、資料庫設計、部署手冊

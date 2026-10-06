@@ -1,0 +1,21 @@
+# 正式環境的反向代理。SERVER_NAME 從 .env 讀。
+{$SERVER_NAME} {
+	# tls internal = Caddy 自己當 CA 簽憑證、自動續期。
+	# 內網沒有公開網域、拿不到 Let's Encrypt 憑證時用這個，
+	# 再把 Caddy 的根憑證打包進 APK（見 docs/DEPLOY_DOCKER_WINDOWS.md 第 6 步）。
+	#
+	# ★ 如果之後改成有公開網域（例如 kidney.你的網域.tw 且 DNS 指得到這台機器），
+	#   把下面這一行刪掉，Caddy 會自動去申請正式憑證，APK 就不用再帶 CA。
+	tls internal
+
+	encode gzip
+	reverse_proxy backend:4000
+}
+
+# 給病人下載 APK 的明文入口。
+# 單獨開一個 http 埠是因為手機「瀏覽器」不認得我們自己簽的 CA（CA 只打包進 App 裡），
+# 用 https 下載會跳一堆憑證警告，長輩會直接放棄。這個埠只放 APK，沒有病人資料。
+:8080 {
+	root * /srv/public
+	file_server
+}

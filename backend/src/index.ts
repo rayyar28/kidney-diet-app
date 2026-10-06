@@ -8,6 +8,7 @@ import { gamificationRouter } from "./routes/gamification.routes.js";
 import { profileRouter } from "./routes/profile.routes.js";
 import { staffRouter } from "./routes/staff.routes.js";
 import { errorMiddleware } from "./middleware/error.middleware.js";
+import { configureDatabase } from "./prisma.js";
 
 const app = express();
 
@@ -51,6 +52,9 @@ app.use("/api/profile", profileRouter);
 app.use("/api/staff", staffRouter);
 
 app.use(errorMiddleware);
+
+// 先把資料庫設定好再開始收請求：WAL 沒開的話，第一批同時進來的病人會互相卡住
+await configureDatabase();
 
 app.listen(env.port, () => {
   console.log(`API server listening on port ${env.port}`);

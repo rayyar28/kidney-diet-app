@@ -60,11 +60,13 @@
 
 ## 這台電腦的環境（踩過的坑）
 
-- **PostgreSQL 是手動啟動的**，沒有裝成 Windows 服務（沒有系統管理員權限）。
-  Docker Desktop 在這台壞掉修不好，不要建議用 Docker。
-  ```powershell
-  & "C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe" -D ".devdata\pgdata" -l ".devdata\pg.log" start
-  ```
+- **資料庫是 SQLite**，就是 `backend/data/kidney.db` 一個檔案。**不需要啟動任何資料庫服務**
+  （以前是手動 `pg_ctl` 啟動 PostgreSQL，現在不用了）。Prisma 的 SQLite 相對路徑是相對於
+  **schema 檔**而不是專案根目錄，所以 `file:../data/kidney.db` 指的是 `backend/data/`。
+- **SQLite 的兩個限制**：不支援 enum（schema 裡那些欄位是 `String`，型別定義在
+  `src/domain/enums.ts`），不支援 Json（`rawModelOutput` 存 JSON 字串）。
+- **不要直接複製 .db 檔當備份**：資料庫開著 WAL，內容分散在 `.db` 與 `.db-wal`，
+  複製會拿到不完整的快照。用 `npm run backup:db -- <路徑>`（走 `VACUUM INTO`）。
 - **`prisma migrate dev` 不能用**（它要互動輸入）。改用：
   ```bash
   npx prisma migrate diff --from-schema-datasource prisma/schema.prisma \

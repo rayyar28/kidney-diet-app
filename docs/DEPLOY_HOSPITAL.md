@@ -8,6 +8,29 @@
 > 這份文件取代 [DEPLOY.md](./DEPLOY.md)（方案 A：Render + Neon + R2 + Cloudflare Pages）
 > 作為目前的部署方向。方案 A 保留作為備案，若資訊室不同意院內自架再回去看它（見第九節）。
 
+> ### ⚠️ 2026-10-06：這份文件有幾節已經過期
+>
+> 專案後來做了兩個改變，但這份文件還沒全面跟上：
+>
+> 1. **資料庫改成 SQLite**（原本是 PostgreSQL）——資料庫就是一個檔案，不用安裝、
+>    沒有服務、沒有密碼、沒有 5432 埠。
+> 2. **部署改用 Docker**（原本是用 NSSM 把 Node 和 Caddy 註冊成 Windows 服務）。
+>
+> **目前實際要跑的指令看 [DEPLOY_DOCKER_WINDOWS.md](./DEPLOY_DOCKER_WINDOWS.md)**，
+> 搭配 repo 裡的 `docker-compose.prod.yml`、`Caddyfile`、`backup.ps1`。
+>
+> 這份文件仍然值得讀的部分：第〇節（這個方案改變了收案流程什麼）、第一節（要問資訊室什麼）、
+> 以及第 3.1、3.2 節。**以下幾處還停留在舊做法，不要照做**：
+>
+> | 段落 | 現況 |
+> |---|---|
+> | 3.9 NSSM 服務註冊、`DependOnService postgresql-x64-17` | 改用 Docker 的 `restart: always` |
+> | 備份（`pg_dump`）與還原演練（`psql` / `createdb`） | 改用 `backup.ps1`，走 SQLite 的 `VACUUM INTO` |
+> | 故障排除裡提到 `Get-Service postgresql-x64-17` 的幾列 | 改成看 `docker compose ps` |
+> | `.env` 範例裡的 `DATABASE_URL=postgresql://...` | 改成 `file:../data/kidney.db` |
+>
+> 等 Docker 那套在實機跑過一輪、確定流程穩定之後，再把這份文件整個重寫會比現在改得準。
+
 ---
 
 ## 〇、先看懂這個方案改變了什麼
@@ -64,13 +87,13 @@ App 是離線優先設計：拍照後先寫進手機的 IndexedDB，連得上伺
 | **病人的手機會連哪個 Wi-Fi？訪客網還是員工網？** | 訪客網幾乎都開「用戶端隔離」（AP isolation），手機連得上網際網路，但**連不到同一個網路裡的任何一台電腦** | 整個方案直接不成立，要走第九節的替代方案 |
 | **那台電腦和病人手機在不在同一個網段？中間有沒有防火牆？** | 院內通常把行政網、醫療網、訪客網切成不同 VLAN，彼此預設不通 | 同上，或要請資訊室開一條規則 |
 | **能不能給那台電腦固定 IP（或 DHCP 保留）？能不能給一個院內 DNS 名稱？** | 後端網址要**寫死在 APK 裡**，IP 一變所有病人的 App 同時失效 | 只能用 IP，而且要盯著它不要變 |
-| **我可以在這台機器上裝 Node.js、PostgreSQL、並開一個網路服務嗎？** | 有些醫院的終端機有白名單或應用程式控管 | 要改用資訊室提供的機器或虛擬機 |
+| **我可以在這台機器上裝 Node.js（或 Docker）、並開一個網路服務嗎？** | 有些醫院的終端機有白名單或應用程式控管 | 要改用資訊室提供的機器或虛擬機。（資料庫不用裝，是一個檔案）|
 | **這台電腦有沒有還原卡／Deep Freeze／系統還原方案？** | 醫院公用電腦很常裝，**重開機會把整顆系統碟還原成原狀** | 你的資料庫和照片會在某次重開後全部消失，且無法復原。這是最致命的一項 |
 | **GPO 會不會強制在凌晨自動更新重開？** | 會的話，服務必須設定成開機自動啟動（3.9 做的就是這件事） | 不致命，但代表「開一個終端機跑著」的做法絕對不行 |
 | **這台電腦能不能連外網（網際網路）？** | `npm install` 要抓套件 | 要在家先裝好整包帶過去，見 3.4 |
 | **防毒／端點防護是什麼？能不能加排除清單？** | 防毒即時掃描會把每張上傳的照片掃一遍，也可能把 node.exe 當成可疑程式 | 上傳會很慢，或服務莫名其妙被終止 |
 | **備份可以放哪裡？能不能接外接硬碟？能不能傳到院外？** | 醫療資料外傳通常全面禁止 | 備份只能留在院內，那就要兩份不同的實體位置 |
-| **這台電腦斷電過幾次？有沒有 UPS？** | PostgreSQL 突然斷電有機率損毀 | 自己買一台約 NT$2,000 的小 UPS |
+| **這台電腦斷電過幾次？有沒有 UPS？** | SQLite 開著 WAL 對斷電有相當好的耐受度，但仍不是零風險，而且照片檔案也可能寫到一半 | 自己買一台約 NT$2,000 的小 UPS |
 
 > **怎麼開口**：不要說「我要架一台伺服器」，說
 > 「我是成大資工的學生，跟 ◯◯ 醫師做一個腎臟病飲食紀錄的研究專題，
@@ -139,7 +162,7 @@ ipconfig | Select-String "IPv4"
 ```
 D:\kidney\
   app\        ← 專案程式碼（git clone 或拷貝過來的）
-  data\       ← PostgreSQL 的資料
+  data\       ← 資料庫（kidney.db，就一個檔案）
   uploads\    ← 病人照片
   certs\      ← HTTPS 憑證
   logs\       ← 服務的輸出
@@ -159,60 +182,19 @@ npm -v
 
 > 開發機用的也是 Node 20，版本一致可以少掉一類「在我電腦上好好的」問題。
 
-### 3.2 PostgreSQL（這次要裝成 Windows 服務）
+### 3.2 資料庫：不用裝
 
-到 [enterprisedb.com](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads)
-下載 **PostgreSQL 17** 的 Windows installer。
+資料庫是 **SQLite**，整個資料庫就是 `D:\kidney\data\kidney.db` 一個檔案，由後端自己建立。
+**沒有要安裝的軟體、沒有 Windows 服務要設定、沒有 5432 埠要鎖、沒有資料庫密碼要保管。**
 
-安裝時：
+原本這一節是「安裝 PostgreSQL 並鎖成只聽本機」，改用 SQLite 之後整段都不需要了。
+相對地有兩件事要特別注意：
 
-- Data Directory 改成 `D:\kidney\data`
-- 設一個 postgres 超級使用者密碼，**記在安全的地方**
-- Port 留 5432
-- Stack Builder 不用裝
-
-> **跟你開發機的差別**：開發機因為沒有管理員權限，PostgreSQL 是手動 `pg_ctl start` 啟動的
-> （見 [CLAUDE.md](../CLAUDE.md)）。醫院這台有管理員權限，installer 會把它**裝成 Windows 服務**，
-> 開機自動啟動。這正是我們要的——不要在這台機器上重複開發機那個手動啟動的做法。
-
-裝完**立刻**把資料庫鎖成只聽本機。編輯 `D:\kidney\data\postgresql.conf`：
-
-```
-listen_addresses = 'localhost'
-```
-
-重啟服務：
-
-```powershell
-Restart-Service postgresql-x64-17
-```
-
-> 為什麼：後端跟資料庫在同一台機器上，資料庫完全不需要對網路開放。
-> 開發用的 `docker-compose.yml` 把 5432 對外開放、密碼寫死在檔案裡，
-> 那在一台連著醫院網路的機器上是災難。
-
-建立這個專案要用的使用者和資料庫：
-
-```powershell
-$env:PGPASSWORD = "你剛剛設的 postgres 密碼"
-$psql = "C:\Program Files\PostgreSQL\17\bin\psql.exe"
-& $psql -U postgres -h 127.0.0.1 -c "CREATE USER kidney_app WITH PASSWORD 'ThisIsNotTheRealPassword';"
-& $psql -U postgres -h 127.0.0.1 -c "CREATE DATABASE kidney_diet OWNER kidney_app;"
-Remove-Item Env:\PGPASSWORD
-```
-
-產生一個真的隨機密碼來用（跑三次，一個給資料庫、兩個給 JWT）：
-
-```powershell
-node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
-```
-
-> ⚠ **資料庫密碼裡如果有 `@` `#` `/` `:` 這些字元，連線字串會解析錯誤**，
-> 而錯誤訊息長得像「資料庫連不上」，很難聯想到是密碼的問題。
-> 兩種解法：把密碼做 URL 編碼，或乾脆**只用英數字**產生密碼：
-> ```powershell
-> node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-> ```
+- **這個檔案就是全部的研究資料。** 它放在哪、會不會被還原卡清掉、有沒有備份，
+  比以前更重要——以前至少資料庫有自己的服務和資料目錄，現在它看起來只是一個普通檔案。
+- **備份不能直接複製它。** 資料庫開著 WAL 模式，內容分散在 `kidney.db` 與 `kidney.db-wal`，
+  在有人寫入時複製會拿到不完整的快照，而且要到還原那天才會發現。用 `backup.ps1`
+  （它走 SQLite 內建的 `VACUUM INTO` 線上備份）。
 
 ### 3.3 時間與時區（不要跳過）
 

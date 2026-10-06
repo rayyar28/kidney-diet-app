@@ -1,35 +1,19 @@
+# 開發用。資料庫是 SQLite（backend/data/kidney.db），沒有資料庫服務。
 services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: kidney_app
-      POSTGRES_PASSWORD: kidney_app_password
-      POSTGRES_DB: kidney_diet
-    ports:
-      - "5432:5432"
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kidney_app"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   backend:
     build: ./backend
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://kidney_app:kidney_app_password@db:5432/kidney_diet?schema=public
+      DATABASE_URL: file:../data/kidney.db
     ports:
       - "4000:4000"
     volumes:
       - ./backend/src:/app/src
       - ./backend/prisma:/app/prisma
+      # SQLite 檔案掛出來，容器重建也不會把開發資料弄丟
+      - ./backend/data:/app/data
       - uploads_data:/app/uploads
-    depends_on:
-      db:
-        condition: service_healthy
 
   frontend:
     build: ./frontend
@@ -46,5 +30,4 @@ services:
       - backend
 
 volumes:
-  db_data:
   uploads_data:

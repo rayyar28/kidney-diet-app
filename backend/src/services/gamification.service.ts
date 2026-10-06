@@ -1,4 +1,4 @@
-import { PointsReason } from "@prisma/client";
+import { PointsReason } from "../domain/enums.js";
 import { prisma } from "../prisma.js";
 
 /**

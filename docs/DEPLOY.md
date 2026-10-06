@@ -25,6 +25,18 @@
 
 **為什麼照片要走 R2 直連**：如果每張照片都經過後端轉送，所有照片流量都會算在 Render 的頻寬上，又慢又要錢。現在後端只負責「決定這個人能不能看這張照片」，通過就簽一個 5 分鐘有效的網址，瀏覽器拿著網址直接跟 R2 要檔案。權限控制沒有變鬆，但流量成本降到零。
 
+
+> ### ⚠️ 資料庫已改成 SQLite，這份雲端方案需要調整
+>
+> 專案的資料庫從 PostgreSQL 改成 SQLite（一個檔案）。**Render 的免費方案是 ephemeral
+> 檔案系統，每次部署或重啟都會把資料庫檔案清空**，照這份文件直接部署會持續遺失資料。
+>
+> 真的要走這條路，二選一：掛一個 Render 的 Persistent Disk（付費），或這條路改回
+> PostgreSQL + Neon（下方第二節）。`render.yaml` 裡也有同樣的警告。
+>
+> 目前的部署方向是院內自架，見 [DEPLOY_HOSPITAL.md](./DEPLOY_HOSPITAL.md) 與
+> [DEPLOY_DOCKER_WINDOWS.md](./DEPLOY_DOCKER_WINDOWS.md)。
+
 ---
 
 ## 一、程式碼改動總覽（已經幫你寫進 repo 了）

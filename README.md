@@ -59,20 +59,20 @@
 - **離線層**：IndexedDB 本機儲存 + 背景同步佇列（`frontend/src/offline/`）
 - **試用模式**：不連伺服器也能完整使用（`frontend/src/trial/`）
 - **後端**：Node.js + Express + TypeScript
-- **資料庫**：PostgreSQL，透過 Prisma ORM 管理
+- **資料庫**：**SQLite**（一個檔案 `backend/data/kidney.db`），透過 Prisma ORM 管理
 - **照片儲存**：`StorageService` 介面，兩種實作可用環境變數切換
   - `STORAGE_DRIVER=local`：存本機磁碟（開發用）
   - `STORAGE_DRIVER=r2`：存 Cloudflare R2，後端簽發短效直連網址（正式用）
 
 ## 本機啟動
 
-環境需求：**Node.js 20+**（開發機目前是 24）與 **PostgreSQL 17**，原生安裝、不需要 Docker。
+環境需求：只要 **Node.js 20+**（開發機目前是 24）。資料庫是 SQLite，**不需要安裝任何資料庫軟體**。
 
-> 為什麼不用 Docker：這台開發機的 Docker Desktop 有個修不掉的系統層問題
-> （AF_UNIX socket 殘留檔案）完全無法啟動，所以改成原生安裝。PostgreSQL 的資料放在
-> `.devdata/pgdata`，是用 `pg_ctl` 手動啟動的獨立叢集（不裝進 Windows 服務，
-> 因此不需要系統管理員權限）。`docker-compose.yml` 仍保留在專案裡，
-> 在 Docker 正常的電腦（Linux / Mac）上可以直接用。
+> **為什麼是 SQLite**：合作方的資料庫也是 SQLite，專題需要兩邊一致。
+> 對這個規模（30 位病人、3 個月）也完全夠用——照片是放在檔案系統的，資料庫只有
+> 文字和數字，大概幾十 MB。順帶的好處是部署時少一個服務要裝、要顧、要備份。
+>
+> `docker-compose.yml` 仍保留在專案裡，在 Docker 正常的電腦上可以直接用。
 
 第一次啟動：
 
@@ -82,8 +82,8 @@ cd backend; npm install; npx prisma generate; npx prisma migrate deploy; npm run
 cd ../frontend; npm install
 ```
 
-之後每次啟動，執行專案根目錄的 [start-dev.ps1](start-dev.ps1)，它會依序啟動
-PostgreSQL、後端、前端：
+之後每次啟動，執行專案根目錄的 [start-dev.ps1](start-dev.ps1)，它會依序啟動後端與前端
+（不需要啟動資料庫，SQLite 就是一個檔案）：
 
 ```powershell
 .\start-dev.ps1
@@ -195,8 +195,8 @@ cd backend; npm run grant-role -- nurse@hospital.tw RESEARCHER
 # 後端：忘記密碼功能的端到端檢查（36 項，含惡意情境）
 cd backend; npm run check:password-reset
 
-# 停掉資料庫
-& "C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe" -D ".devdata\pgdata" stop
+# 備份資料庫（線上備份，不必停服務；直接複製 .db 檔在 WAL 模式下不安全）
+cd backend; npm run backup:db -- ../backup-kidney.db
 ```
 
 ## 已完成的功能

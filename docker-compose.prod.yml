@@ -1,0 +1,58 @@
+# 正式環境（醫院電腦 / VM）用。開發請繼續用 docker-compose.yml。
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# 跟開發版的差別，每一項都有理由：
+#   - backend 沒有 ports:，只有 caddy 進得來
+#   - 資料庫是 SQLite（一個檔案，放在 db_data volume 裡），沒有資料庫服務、
+#     沒有對外的 5432、也沒有資料庫密碼要管
+#   - 沒有把 src/ 掛進容器（那是熱重載用的），跑的是 image 裡建置好的版本
+#   - restart: always，停電或重開機後自動回來
+#   - 密碼從 .env 讀，不寫死在這個檔案裡
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    restart: always
+    env_file: .env
+    environment:
+      # 這幾個由 compose 直接給，不要讓人在 .env 裡重打一次打錯。
+      # SQLite 的路徑是相對於 prisma/schema.prisma，所以 ../data 是容器裡的 /app/data
+      DATABASE_URL: file:../data/kidney.db
+      PORT: "4000"
+      STORAGE_DRIVER: local
+      UPLOAD_DIR: /app/uploads
+      # 院內機器寄不出信，只留「衛教師當面開代碼」那條路
+      MAIL_DRIVER: console
+      TZ: Asia/Taipei
+    volumes:
+      - uploads_data:/app/uploads
+      # 整個資料庫就是這裡面的一個檔案。備份＝複製它（連同 -wal / -shm）
+      - db_data:/app/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    env_file: .env
+    environment:
+      TZ: Asia/Taipei
+    ports:
+      - "443:443"
+      # 只給病人下載 APK 用的明文埠。發完 App 就可以把這行註解掉。
+      - "8080:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./public:/srv/public:ro
+      # caddy_data 裡有自動產生的 CA 與憑證，刪掉它等於換一張 CA，
+      # 已經裝在病人手機上的 App 會全部連不上。不要刪。
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
+  uploads_data:
+  caddy_data:
+  caddy_config:

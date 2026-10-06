@@ -26,7 +26,14 @@ services:
       - key: NODE_VERSION
         value: "20"
 
-      # --- 資料庫（Neon）---
+      # --- 資料庫 ---
+      # ⚠️ 專案已改用 SQLite（一個檔案），而 **Render 的免費方案是 ephemeral 檔案系統**：
+      #    每次部署、重啟、甚至休眠醒來，容器的磁碟都會重置，資料庫檔案會消失。
+      #
+      #    這個檔案是備案（方案 A）。真的要走 Render 的話，二選一：
+      #      1. 掛一個 Render 的 Persistent Disk（付費），把 DATABASE_URL 指到那顆磁碟
+      #      2. 改回 PostgreSQL（Neon），DATABASE_URL 填 Neon 的連線字串
+      #    照目前這樣直接部署會每次重啟就清空，**不要這樣用**。
       - key: DATABASE_URL
         sync: false
 
