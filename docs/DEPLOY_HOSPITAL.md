@@ -1,35 +1,17 @@
 # 部署手冊 — 方案 B（醫院電腦自架，院內 Wi-Fi）
 
 專案：`rayyar28/kidney-diet-app`
-撰寫日期：2026-10-01
+撰寫日期：2026-10-01｜改寫日期：2026-10-06（改用 Docker + SQLite）
 適用情境：後端 + 資料庫 + 照片全部放在**醫院的一台 Windows 電腦**；病人手機只在**院內 Wi-Fi**
 連得到；你對那台機器有**系統管理員權限**；**IRB 還在審查中**（現階段只能放測試資料）。
 
 > 這份文件取代 [DEPLOY.md](./DEPLOY.md)（方案 A：Render + Neon + R2 + Cloudflare Pages）
 > 作為目前的部署方向。方案 A 保留作為備案，若資訊室不同意院內自架再回去看它（見第九節）。
 
-> ### ⚠️ 2026-10-06：這份文件有幾節已經過期
->
-> 專案後來做了兩個改變，但這份文件還沒全面跟上：
->
-> 1. **資料庫改成 SQLite**（原本是 PostgreSQL）——資料庫就是一個檔案，不用安裝、
->    沒有服務、沒有密碼、沒有 5432 埠。
-> 2. **部署改用 Docker**（原本是用 NSSM 把 Node 和 Caddy 註冊成 Windows 服務）。
->
-> **目前實際要跑的指令看 [DEPLOY_DOCKER_WINDOWS.md](./DEPLOY_DOCKER_WINDOWS.md)**，
-> 搭配 repo 裡的 `docker-compose.prod.yml`、`Caddyfile`、`backup.ps1`。
->
-> 這份文件仍然值得讀的部分：第〇節（這個方案改變了收案流程什麼）、第一節（要問資訊室什麼）、
-> 以及第 3.1、3.2 節。**以下幾處還停留在舊做法，不要照做**：
->
-> | 段落 | 現況 |
-> |---|---|
-> | 3.9 NSSM 服務註冊、`DependOnService postgresql-x64-17` | 改用 Docker 的 `restart: always` |
-> | 備份（`pg_dump`）與還原演練（`psql` / `createdb`） | 改用 `backup.ps1`，走 SQLite 的 `VACUUM INTO` |
-> | 故障排除裡提到 `Get-Service postgresql-x64-17` 的幾列 | 改成看 `docker compose ps` |
-> | `.env` 範例裡的 `DATABASE_URL=postgresql://...` | 改成 `file:../data/kidney.db` |
->
-> 等 Docker 那套在實機跑過一輪、確定流程穩定之後，再把這份文件整個重寫會比現在改得準。
+> **這份是「為什麼這樣做、出事怎麼辦」的完整版。**
+> 只想知道要打哪些指令，看 [DEPLOY_DOCKER_WINDOWS.md](./DEPLOY_DOCKER_WINDOWS.md)，
+> 那份一頁可以看完。兩份都假設你用 repo 裡的 `docker-compose.prod.yml`、`Caddyfile`、
+> `backup.ps1`。
 
 ---
 
@@ -87,11 +69,11 @@ App 是離線優先設計：拍照後先寫進手機的 IndexedDB，連得上伺
 | **病人的手機會連哪個 Wi-Fi？訪客網還是員工網？** | 訪客網幾乎都開「用戶端隔離」（AP isolation），手機連得上網際網路，但**連不到同一個網路裡的任何一台電腦** | 整個方案直接不成立，要走第九節的替代方案 |
 | **那台電腦和病人手機在不在同一個網段？中間有沒有防火牆？** | 院內通常把行政網、醫療網、訪客網切成不同 VLAN，彼此預設不通 | 同上，或要請資訊室開一條規則 |
 | **能不能給那台電腦固定 IP（或 DHCP 保留）？能不能給一個院內 DNS 名稱？** | 後端網址要**寫死在 APK 裡**，IP 一變所有病人的 App 同時失效 | 只能用 IP，而且要盯著它不要變 |
-| **我可以在這台機器上裝 Node.js（或 Docker）、並開一個網路服務嗎？** | 有些醫院的終端機有白名單或應用程式控管 | 要改用資訊室提供的機器或虛擬機。（資料庫不用裝，是一個檔案）|
+| **我可以在這台機器上裝 Docker Desktop、並開一個網路服務嗎？** | 有些醫院的終端機有白名單或應用程式控管；**Docker Desktop 對大型組織要付費訂閱**（見 3.2） | 要改用資訊室提供的機器或虛擬機，或改用免授權費的容器執行環境 |
 | **這台電腦有沒有還原卡／Deep Freeze／系統還原方案？** | 醫院公用電腦很常裝，**重開機會把整顆系統碟還原成原狀** | 你的資料庫和照片會在某次重開後全部消失，且無法復原。這是最致命的一項 |
-| **GPO 會不會強制在凌晨自動更新重開？** | 會的話，服務必須設定成開機自動啟動（3.9 做的就是這件事） | 不致命，但代表「開一個終端機跑著」的做法絕對不行 |
-| **這台電腦能不能連外網（網際網路）？** | `npm install` 要抓套件 | 要在家先裝好整包帶過去，見 3.4 |
-| **防毒／端點防護是什麼？能不能加排除清單？** | 防毒即時掃描會把每張上傳的照片掃一遍，也可能把 node.exe 當成可疑程式 | 上傳會很慢，或服務莫名其妙被終止 |
+| **GPO 會不會強制在凌晨自動更新重開？** | 會的話，重開之後服務必須自己回來（3.9 在處理這件事） | 不致命，但代表「開一個終端機跑著」的做法絕對不行 |
+| **這台電腦能不能連外網（網際網路）？** | 要抓 Docker image 和套件 | 要在家先把 image 匯出帶過去，見 3.4 |
+| **防毒／端點防護是什麼？能不能加排除清單？** | 防毒即時掃描會把每張上傳的照片掃一遍，也可能干擾 Docker 的虛擬磁碟 | 上傳會很慢，或容器莫名其妙被終止 |
 | **備份可以放哪裡？能不能接外接硬碟？能不能傳到院外？** | 醫療資料外傳通常全面禁止 | 備份只能留在院內，那就要兩份不同的實體位置 |
 | **這台電腦斷電過幾次？有沒有 UPS？** | SQLite 開著 WAL 對斷電有相當好的耐受度，但仍不是零風險，而且照片檔案也可能寫到一半 | 自己買一台約 NT$2,000 的小 UPS |
 
@@ -153,347 +135,211 @@ ipconfig | Select-String "IPv4"
 
 ## 三、在醫院電腦上安裝
 
-以下假設：
+> 這一節解釋每一步在幹嘛、為什麼要這樣。**純指令清單看
+> [DEPLOY_DOCKER_WINDOWS.md](./DEPLOY_DOCKER_WINDOWS.md)。**
 
-- 安裝位置 `D:\kidney`（**路徑全英文**。專案路徑含中文會讓 Android 建置失敗，
-  資料庫和 Node 雖然不受影響，但統一用英文路徑省得之後踩坑）
-- 院內網址 `kidney.hosp.local`（請自行替換成資訊室給你的名稱或 IP）
+### 3.1 為什麼用 Docker，而不是一個一個裝
 
-```
-D:\kidney\
-  app\        ← 專案程式碼（git clone 或拷貝過來的）
-  data\       ← 資料庫（kidney.db，就一個檔案）
-  uploads\    ← 病人照片
-  certs\      ← HTTPS 憑證
-  logs\       ← 服務的輸出
-  backup\     ← 每日備份（最好放在另一顆實體硬碟）
-  public\     ← 給病人下載 APK 用
-```
+這個系統要跑三個東西：後端（Node）、反向代理（Caddy，負責 HTTPS）、資料庫。
+在一台不屬於你、你也不會天天在旁邊的醫院電腦上，用 Docker 的理由是：
 
-### 3.1 Node.js
+- **整包一致。** 開發機測過的環境就是醫院機器上跑的環境，不會有「在我電腦上好好的」。
+- **重開機會自己回來。** compose 裡的 `restart: always` 就是這件事，不必再學 NSSM
+  那類把程式註冊成 Windows 服務的工具（這份手冊的舊版本就是那樣做的，容易出錯的地方很多）。
+- **解除乾淨。** 資訊室要你拆掉時，`docker compose down -v` 就沒了，不會在系統裡留下
+  一堆服務和登錄檔項目。
 
-到 [nodejs.org](https://nodejs.org) 下載 **Node.js 20 LTS 的 Windows Installer (.msi)**，
-一路下一步。裝完開一個新的 PowerShell 確認：
+**資料庫是 SQLite，所以不用裝。** 整個資料庫就是一個檔案，由後端自己建立，
+放在 `db_data` 這個 Docker volume 裡。沒有資料庫服務、沒有 5432 埠、沒有資料庫密碼。
 
-```powershell
-node -v    # 應該是 v20.x
-npm -v
-```
+### 3.2 要裝的東西（只做一次，要系統管理員）
 
-> 開發機用的也是 Node 20，版本一致可以少掉一類「在我電腦上好好的」問題。
+1. [Git for Windows](https://git-scm.com/download/win)
+2. [Docker Desktop](https://www.docker.com/products/docker-desktop/)，安裝時勾 **WSL 2**
 
-### 3.2 資料庫：不用裝
+> ⚠️ **Docker Desktop 的授權**：對「員工 250 人以上或年營收 1000 萬美元以上」的組織
+> 需要付費訂閱。醫院一定超過這個門檻。**裝之前先跟資訊室確認**——這是第一節那張表裡
+> 「可不可以裝」那一題的一部分。真的不行的話，替代方案是 Rancher Desktop 或
+> 在一台 Linux 虛擬機上跑 Docker Engine（本身是免授權費的）。
 
-資料庫是 **SQLite**，整個資料庫就是 `D:\kidney\data\kidney.db` 一個檔案，由後端自己建立。
-**沒有要安裝的軟體、沒有 Windows 服務要設定、沒有 5432 埠要鎖、沒有資料庫密碼要保管。**
+### 3.3 讓它在重開機後自己回來
 
-原本這一節是「安裝 PostgreSQL 並鎖成只聽本機」，改用 SQLite 之後整段都不需要了。
-相對地有兩件事要特別注意：
+Docker Desktop 是桌面程式，**沒有人登入它就不會啟動**——這是 Windows 版 Docker 唯一
+比較彆扭的地方。兩個設定都要做：
 
-- **這個檔案就是全部的研究資料。** 它放在哪、會不會被還原卡清掉、有沒有備份，
-  比以前更重要——以前至少資料庫有自己的服務和資料目錄，現在它看起來只是一個普通檔案。
-- **備份不能直接複製它。** 資料庫開著 WAL 模式，內容分散在 `kidney.db` 與 `kidney.db-wal`，
-  在有人寫入時複製會拿到不完整的快照，而且要到還原那天才會發現。用 `backup.ps1`
-  （它走 SQLite 內建的 `VACUUM INTO` 線上備份）。
+1. Docker Desktop → Settings → General → 勾 **Start Docker Desktop when you sign in**
+2. `netplwiz` → 取消「必須輸入使用者名稱和密碼」→ 設定自動登入
 
-### 3.3 時間與時區（不要跳過）
+> 半夜 GPO 強制更新重開之後，這兩項決定了隔天早上病人上不上傳得了。
+> 設完一定要做 5.1 的「重開機不登入」測試，不要相信它應該會動。
 
-連續天數、「今日三餐全勤」這些都是用伺服器時間算的。時間跑掉，資料就錯，而且錯得很難發現。
+### 3.4 時間與時區（不要跳過）
 
 ```powershell
-# 時區設成台北
 tzutil /s "Taipei Standard Time"
-
-# 開啟自動校時
-Set-Service w32time -StartupType Automatic
-Start-Service w32time
 w32tm /resync
+# 確認自動校時是開的
 w32tm /query /status
 ```
 
-### 3.4 把程式碼和套件弄上去
+時間錯了，連續天數和「今日三餐全勤」會算錯，而且**不會報錯**，你只會在分析資料時
+覺得數字怪怪的。容器內的時區由 compose 的 `TZ: Asia/Taipei` 設定，但那只影響 log 的
+時間顯示——真正用來算日期的是手機回報的時區偏移（見 ARCHITECTURE）。
 
-**如果那台電腦連得上 GitHub：**
+### 3.5 取得程式碼
 
 ```powershell
+mkdir D:\kidney
 cd D:\kidney
 git clone https://github.com/rayyar28/kidney-diet-app.git app
-cd app\backend
-npm ci
+cd app
 ```
 
-**如果連不上外網（醫院很常見）**，在家先準備好整包再帶過去：
+> **路徑不要有中文。**（開發機上的專案路徑有中文，所以 Android 建置要另外做目錄連結；
+> 這台機器直接用英文路徑就好。）
+
+**如果這台電腦連不到外網**，在家先把 image 匯出帶過去：
 
 ```powershell
-# 在你自己的電腦上
-cd D:\大學\專題\claude_app\backend
-npm ci                 # 確保 node_modules 是乾淨的、跟 package-lock.json 一致
-npm run build          # 先建置好，醫院那台就不用再編譯
+# 在家（有網路的機器上）
+docker compose -f docker-compose.prod.yml build
+docker save kidney-diet-app-backend caddy:2-alpine -o kidney-images.tar
+
+# 在醫院那台
+docker load -i kidney-images.tar
 ```
 
-然後把整個 `claude_app` 資料夾（**含 `node_modules` 和 `dist`**，但不要含 `.env`）
-壓縮拷到隨身碟，在醫院電腦解壓到 `D:\kidney\app`。
+程式碼本身用隨身碟拷貝整個資料夾過去即可（含 `.git` 的話之後還能 `git pull`）。
 
-> ⚠ `sharp` 這個套件含平台相依的二進位檔。你的開發機和醫院電腦都是 **Windows x64**，
-> 直接複製 `node_modules` 沒問題；但如果醫院那台是 ARM 或 32 位元，就得在那台機器上
-> 重新 `npm ci`（也就得有網路）。先用 `node -p "process.arch"` 確認兩邊一致。
-
-### 3.5 建立 `backend\.env`
-
-在 `D:\kidney\app\backend\.env` 建立這個檔案（**絕對不要 commit**，`.gitignore` 已經擋了）：
-
-```bash
-# ---- 資料庫（只連本機）----
-DATABASE_URL="postgresql://kidney_app:這裡放3.2產生的密碼@127.0.0.1:5432/kidney_diet?schema=public"
-
-# ---- JWT（用 3.2 的指令各產一組，不要跟開發用的一樣）----
-JWT_ACCESS_SECRET="第一組隨機字串"
-JWT_REFRESH_SECRET="第二組隨機字串"
-JWT_ACCESS_EXPIRES_IN="15m"
-
-# ★ 這一項對院內自架方案特別重要 ★
-# 病人「最長多久會連上這台伺服器一次」就是回診間隔。只有在院內才連得上，
-# 所以這個值必須比回診間隔還大，否則病人帶著累積的紀錄回診時會發現被登出，
-# 而他的密碼是衛教師幫他建的、他多半不知道。
-# 預設的一年足以涵蓋任何回診間隔，照抄即可。這不是安全參數——縮短它幾乎沒有防護價值
-# （token 在資料庫只存雜湊、每次換發都輪替），要停掉某個人的存取是用撤銷而不是等過期。
-JWT_REFRESH_EXPIRES_IN="365d"
-
-PORT=4000
-
-# ---- 允許的前端來源 ----
-# App（Capacitor）的 Origin 是 https://localhost，後端程式已經內建放行，
-# 這裡只需要填「用瀏覽器開後台」會用到的來源。
-CORS_ORIGIN="https://kidney.hosp.local"
-
-# ---- 照片存本機磁碟 ----
-STORAGE_DRIVER="local"
-UPLOAD_DIR="D:/kidney/uploads"
-SIGNED_URL_TTL_SECONDS=300
-
-# ---- 忘記密碼 ----
-PASSWORD_RESET_EXPIRES_IN="60m"
-APP_URL=""
-# 院內機器寄不出信（沒有自己的網域、多半也不能連外部 SMTP），
-# 所以寄信功能等於關閉，只留「衛教師當面開代碼」那條路。
-# 這不是將就：對這個收案情境，當面開代碼本來就是主力（見 MEETING_0930.md 2.5）。
-MAIL_DRIVER="console"
-```
-
-> `UPLOAD_DIR` 在 Windows 上**用正斜線** `D:/kidney/uploads`。反斜線在這個檔案裡會被當成跳脫字元。
-> 這跟 `android/local.properties` 的 `sdk.dir` 是同一個坑。
-
-### 3.6 建資料表、建置、灌徽章
+### 3.6 建立 `.env`
 
 ```powershell
-cd D:\kidney\app\backend
-npx prisma migrate deploy
-npx prisma generate
-npm run build
-npm run seed
+copy .env.example .env
+notepad .env
 ```
 
-四個指令都要跑，而且順序不能換：
+每一項的意義：
 
-| 指令 | 為什麼 |
-|---|---|
-| `prisma migrate deploy` | 套用 `prisma/migrations/` 裡那四個 migration。**不是 `migrate dev`**——`migrate dev` 偵測到不一致會要求重置整個資料庫，而且它需要互動輸入，在服務環境下會卡住 |
-| `prisma generate` | 產生 Prisma Client。**忘了這一步會在執行時噴 500，而且 `tsc` 不會報錯**，你會以為程式壞了 |
-| `npm run build` | 編譯成 `dist/`。正式環境跑 `node dist/index.js`，不是 `tsx` |
-| `npm run seed` | 建立徽章資料。沒跑的話遊戲化功能會正常運作，但**一個徽章都發不出來**，而且不會報錯（`awardBadgeIfNew` 找不到徽章就安靜跳過） |
-
-先用前景模式確認它跑得起來：
+| 變數 | 填什麼 | 為什麼 |
+|---|---|---|
+| `JWT_ACCESS_SECRET`<br>`JWT_REFRESH_SECRET` | 各跑一次下面的指令產生 | 這兩個外流，任何人都能偽造任何病人的登入憑證。**不要跟開發環境用同一組** |
+| `JWT_REFRESH_EXPIRES_IN` | `365d`（照抄就好） | 見第〇節第 2 點。只有在院內才連得上，所以這個值必須大於回診間隔 |
+| `SERVER_NAME` | 這台機器對外的名稱或 IP，例如 `192.168.1.50` | **這個值會寫死進病人的 APK，之後不能改**。先確定它不會變 |
+| `CORS_ORIGIN` | `https://<SERVER_NAME>` | App（Capacitor）的 Origin 是 `https://localhost`，後端已內建放行；這裡只是給「用瀏覽器開」的情況 |
 
 ```powershell
-node dist\index.js
-# 應該看到：
-#   API server listening on port 4000
-#   Storage driver: local
-#   Allowed origins: https://kidney.hosp.local
+docker run --rm node:20-alpine node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-另開一個 PowerShell 視窗：
+> 用 hex 不用 base64：base64 會出現 `@ # / :` 這些字元，放進設定檔或連線字串時容易被誤解析，
+> 而錯誤訊息通常跟真正的原因差很遠。
+
+**資料庫不需要密碼**，照片路徑、寄信方式這些都由 compose 直接給定，不用在 `.env` 裡填。
+
+> **為什麼寄信是關掉的**（`MAIL_DRIVER=console`）：院內機器沒有自己的網域、多半也不能連
+> 外部 SMTP，寄不出去。所以「忘記密碼」只留**衛教師當面開代碼**那條路。
+> 這不是將就——對這個收案情境，當面開代碼本來就是主力
+> （帳號是衛教師建的，病人的信箱不見得通，見 [MEETING_0930.md 2.5](./MEETING_0930.md)）。
+
+### 3.7 啟動
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:4000/api/health
-# 應該回：ok : True
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-確認完 Ctrl+C 停掉，等 3.9 再變成服務。
+第一次約 3–5 分鐘。資料表由容器啟動時自己 `prisma migrate deploy` 建好。
 
-### 3.7 開衛教師帳號
-
-衛教師需要 `RESEARCHER` 角色才能幫病人開重設代碼。先用 App 或 API 註冊一個帳號，再升級：
+**徽章資料要手動灌一次**：
 
 ```powershell
-cd D:\kidney\app\backend
-npm run grant-role -- nurse@hospital.tw RESEARCHER
+docker compose -f docker-compose.prod.yml exec backend npm run seed
 ```
 
-改完**要重新登入才生效**。
+不跑的話遊戲化會「正常運作」但一個徽章都發不出來，**而且不會報任何錯**——
+這是最容易漏掉又最難發現的一步。
 
-### 3.8 HTTPS（這一節不做，App 一定連不上）
-
-**這是整個部署最容易卡住、而且錯誤訊息最誤導的一步，請完整讀完。**
-
-Android 從 9 開始預設封鎖明文 HTTP，而 `capacitor.config.ts` 裡也明確寫了
-`allowMixedContent: false`，專案裡**沒有** `network_security_config.xml`。
-結果是：App 去打 `http://192.168.x.x:4000/api/...` 會被系統直接擋下，
-前端的 `fetch` 收到 `TypeError`，被歸類成 `NetworkError`，
-畫面顯示 **「無法連線到伺服器」**。
-
-這句話看起來像網路問題，你會去檢查 Wi-Fi、檢查防火牆、檢查 IP——全部都是對的，
-但真正的原因是 `net::ERR_CLEARTEXT_NOT_PERMITTED`，只有接上
-`chrome://inspect` 看 WebView 的 console 才看得到。
-
-所以：**後端必須有 HTTPS**，而院內沒有公開網域、不能用 Let's Encrypt。
-做法是自己簽一張憑證，再把自己的 CA 打包進 APK。
-
-#### 3.8.1 產生憑證
-
-最簡單的工具是 [mkcert](https://github.com/FiloSottile/mkcert/releases)（單一執行檔，不用安裝）：
+確認活著：
 
 ```powershell
-cd D:\kidney\certs
-# 建立你自己的 CA（只影響這台電腦的信任區，不會動到別人的機器）
-.\mkcert.exe -install
-
-# 簽一張同時涵蓋名稱和 IP 的憑證
-# （兩個都寫進去，之後萬一改用 IP 連也不用重簽）
-.\mkcert.exe -cert-file server.pem -key-file server-key.pem kidney.hosp.local 192.168.1.50
-
-# 找出 CA 根憑證的位置，等一下要打包進 APK
-.\mkcert.exe -CAROOT
-# 會印出一個路徑，裡面的 rootCA.pem 就是你要的
+docker compose -f docker-compose.prod.yml ps        # 兩個容器都要是 running
+curl.exe -k https://localhost/api/health            # 應該回 {"ok":true}
 ```
 
-> **這張 CA 的私鑰（`rootCA-key.pem`）等同於「可以冒充任何網站」的能力**，
-> 不要外流、不要進版控、不要放在共用磁碟。只需要留著 `rootCA.pem` 給 APK 用。
+### 3.8 開衛教師帳號
 
-#### 3.8.2 用 Caddy 做 HTTPS 入口
-
-後端程式本身只跑 HTTP（`app.listen`），不要為了 TLS 去改它。
-前面放一個反向代理最乾淨，而 [Caddy](https://caddyserver.com/download) 在 Windows 上
-就是一個 `.exe`，不需要 Docker（這台機器也別裝 Docker）。
-
-`D:\kidney\Caddyfile`：
-
-```
-kidney.hosp.local {
-    tls D:\kidney\certs\server.pem D:\kidney\certs\server-key.pem
-    encode gzip
-
-    reverse_proxy 127.0.0.1:4000
-}
-
-# 給病人下載 APK 用的明文入口。
-# 單獨開一個 http 埠是因為：手機的「瀏覽器」不認得我們自己簽的 CA
-# （CA 只打包進 App 裡），用 https 下載會跳一堆憑證警告，長輩會直接放棄。
-# 這個埠只放 APK 檔，沒有任何病人資料。
-:8080 {
-    root * D:\kidney\public
-    file_server
-}
-```
-
-> 指定了 `tls <憑證檔>` 之後 Caddy 就不會去找 Let's Encrypt，
-> 這點很重要，否則它會在沒有外網的機器上不斷重試並卡住啟動。
-
-先手動跑一次確認：
+角色不能自助申請（註冊一律是病人），要由你在伺服器上開：
 
 ```powershell
-cd D:\kidney
-.\caddy.exe run --config Caddyfile
+# 先讓那位衛教師用 App 或瀏覽器註冊一個帳號，然後：
+docker compose -f docker-compose.prod.yml exec backend `
+  npm run grant-role -- nurse@hospital.tw RESEARCHER
 ```
 
-### 3.9 全部裝成「開機自動啟動」的服務
+> 權限寫在登入憑證裡，**改完要請他重新登入一次才會生效**。
+> 之後他的「我的」頁面會多一顆「🔑 協助病人重設密碼」。
 
-**這一步決定了這個方案能不能撐三個月。** 只要是「開著一個終端機視窗跑」，
-那麼某次 Windows 更新、某個清潔阿姨關機、某次停電，服務就再也不會回來，
-而你可能三天後才從病人的抱怨裡發現。
+### 3.9 HTTPS 與憑證（這一節不做，App 一定連不上）
 
-用 [NSSM](https://nssm.cc/download)（單一執行檔）把兩個程式註冊成服務：
+Caddy 用 `tls internal` 自己當 CA 簽了一張憑證。Android 預設封鎖明文 http，也不認得
+這張自簽憑證，所以**必須把 Caddy 的根憑證打包進 APK**（做法在 4.1）。
+
+把根憑證抓出來：
 
 ```powershell
-cd D:\kidney
-
-# --- 後端 API ---
-.\nssm.exe install kidney-api "C:\Program Files\nodejs\node.exe" "D:\kidney\app\backend\dist\index.js"
-# ★ 一定要設 AppDirectory：後端用 dotenv 從「工作目錄」讀 .env，
-#   沒設的話服務會以 C:\Windows\System32 當工作目錄，找不到 .env 就啟動失敗
-.\nssm.exe set kidney-api AppDirectory D:\kidney\app\backend
-.\nssm.exe set kidney-api AppStdout D:\kidney\logs\api.log
-.\nssm.exe set kidney-api AppStderr D:\kidney\logs\api-error.log
-.\nssm.exe set kidney-api AppRotateFiles 1
-.\nssm.exe set kidney-api AppRotateBytes 10485760
-# 資料庫沒起來就啟動的話後端會直接掛掉，讓它等 PostgreSQL
-.\nssm.exe set kidney-api DependOnService postgresql-x64-17
-.\nssm.exe set kidney-api Start SERVICE_AUTO_START
-
-# --- Caddy ---
-.\nssm.exe install kidney-proxy "D:\kidney\caddy.exe" "run --config D:\kidney\Caddyfile"
-.\nssm.exe set kidney-proxy AppDirectory D:\kidney
-.\nssm.exe set kidney-proxy AppStdout D:\kidney\logs\caddy.log
-.\nssm.exe set kidney-proxy AppStderr D:\kidney\logs\caddy-error.log
-.\nssm.exe set kidney-proxy DependOnService kidney-api
-.\nssm.exe set kidney-proxy Start SERVICE_AUTO_START
-
-.\nssm.exe start kidney-api
-.\nssm.exe start kidney-proxy
+docker compose -f docker-compose.prod.yml cp `
+  caddy:/data/caddy/pki/authorities/local/root.crt D:\kidney\root.crt
 ```
 
-確認三個服務都在、而且都是「自動」：
+> ⚠️ **絕對不要刪掉 `caddy_data` 這個 volume。** 那張 CA 的私鑰在裡面。刪了等於換一張 CA，
+> 已經裝在病人手機上的 App 會**全部同時連不上**，而且只能重新打包 APK、請 30 位病人重裝。
+> `docker compose down` 不會刪 volume；`down -v` 會。**不要打 `-v`。**
 
-```powershell
-Get-Service postgresql-x64-17, kidney-api, kidney-proxy | Format-Table Name, Status, StartType
-```
-
-**然後做一次真正的測試：把電腦重新開機，不要登入，等三分鐘，再從別的機器確認服務回來了。**
-這個測試比任何檢查清單都有用——它同時驗證了自動啟動、相依順序、以及「不需要有人登入」。
+為什麼不用瀏覽器信任的正式憑證：那需要一個公開網域和能從網際網路連到的伺服器，
+而這個方案刻意不對外。把 CA 打包進 App 的好處是不用在 30 支手機上一支一支安裝憑證，
+而且信任範圍只有這個 App，不會影響手機上其他程式。
 
 ### 3.10 防火牆：只開必要的、只開給該開的網段
 
 ```powershell
-# HTTPS（App 用）— RemoteAddress 換成病人 Wi-Fi 實際的網段
-New-NetFirewallRule -DisplayName "Kidney App HTTPS" -Direction Inbound `
-  -Protocol TCP -LocalPort 443 -RemoteAddress 192.168.1.0/24 -Action Allow
+# 443 給 App；RemoteAddress 換成病人 Wi-Fi 實際的網段
+New-NetFirewallRule -DisplayName "Kidney HTTPS" -Direction Inbound -Protocol TCP `
+  -LocalPort 443 -RemoteAddress 192.168.1.0/24 -Action Allow
 
-# APK 下載（只在發放 App 的那幾天開，發完就關掉）
-New-NetFirewallRule -DisplayName "Kidney APK download" -Direction Inbound `
-  -Protocol TCP -LocalPort 8080 -RemoteAddress 192.168.1.0/24 -Action Allow
+# 8080 給病人下載 APK，發完 App 就可以 Remove-NetFirewallRule
+New-NetFirewallRule -DisplayName "Kidney APK" -Direction Inbound -Protocol TCP `
+  -LocalPort 8080 -RemoteAddress 192.168.1.0/24 -Action Allow
 ```
 
-**不要開 4000（後端）和 5432（資料庫）。** 它們只需要被本機連到。
+後端在 compose 裡沒有開 port（只有 Caddy 進得來），所以**不需要也不應該開 4000**。
+8080 那個埠只放 APK 檔，沒有任何病人資料；它是明文的，因為手機的瀏覽器不認得我們自己
+簽的 CA，用 https 下載會跳一堆憑證警告，長輩會直接放棄。
 
 ### 3.11 電源、更新、防毒
 
-| 項目 | 怎麼設 | 為什麼 |
-|---|---|---|
-| 永不睡眠 | 控制台 → 電源選項 → 變更進階電源設定：睡眠、硬碟、USB 選擇性暫停、網路卡節能全部關掉 | 睡著了手機就連不上，而且病人只會看到「無法連線到伺服器」 |
-| 關閉快速啟動 | 電源選項 → 選擇按下電源按鈕時的行為 → 取消「開啟快速啟動」 | 快速啟動的「關機」其實是休眠，會讓某些服務狀態怪異 |
-| Windows 更新 | 設定「使用中時間」涵蓋門診時段；但如果有 GPO 強制更新就蓋不掉，所以 3.9 的服務化才是真正的保險 | 半夜重開不可怕，服務起不來才可怕 |
-| 自動登入 | 不需要。服務是以系統身分執行的，不用有人登入 | 少一個風險 |
-| 防毒排除清單 | 把 `D:\kidney\data`、`D:\kidney\uploads` 加進排除；確認 `node.exe`、`caddy.exe` 沒被封 | 即時掃描會讓每張照片的寫入都慢上好幾倍，資料庫目錄被掃甚至可能損毀 |
-| 貼紙條 | 機器上貼「研究進行中，請勿關機／請勿拔網路線，問題請聯絡 張庭瑞 09xx-xxx-xxx」 | 真的有用 |
-| UPS | 約 NT$2,000 的小台就夠 | PostgreSQL 突然斷電有機率損毀資料檔 |
+- **UPS**：約 NT$2,000 的小台就夠。SQLite 開著 WAL 對斷電耐受度不錯，但照片檔案可能寫到一半。
+- **Windows Update**：不要關，但把重開時間設在門診時段之外。
+- **防毒排除清單**：把 Docker 的資料目錄（通常是
+  `C:\Users\<你>\AppData\Local\Docker`）和 `D:\kidney` 加進去。即時掃描會讓照片上傳
+  慢到病人等不下去，也可能干擾容器的虛擬磁碟。
+- **不要讓別人用這台電腦**。貼一張紙：「研究用主機，請勿關機」。
 
 ---
 
 ## 四、打包正式版 APK
 
 目前發出去的三版是**試用版**（第一次開啟會問後端網址）。正式版要把網址寫死，
-並且讓 App 信任你自己簽的憑證。
+並且讓 App 信任 Caddy 的那張 CA。
 
-### 4.1 讓 App 信任你的 CA（對應 3.8）
+### 4.1 讓 App 信任那張 CA（對應 3.9）
 
-**步驟一**：把 3.8.1 產生的 `rootCA.pem` 複製到
+**步驟一**：把 3.9 抓出來的 `root.crt` 複製到開發機的
 
 ```
 frontend/android/app/src/main/res/raw/hospital_ca.pem
 ```
 
 （`raw` 資料夾目前不存在，自己建。檔名只能用**小寫英文、數字、底線**，
-用了大寫或減號 Android 建置會失敗。）
+用了大寫或減號 Android 建置會失敗。副檔名改成 `.pem` 沒關係，內容格式一樣。）
 
 **步驟二**：新增 `frontend/android/app/src/main/res/xml/network_security_config.xml`
 
@@ -502,7 +348,7 @@ frontend/android/app/src/main/res/raw/hospital_ca.pem
 <network-security-config>
     <!--
         全站仍然禁止明文 http；只是在系統內建的信任清單之外，
-        額外信任我們自己簽的那張 CA（院內伺服器用）。
+        額外信任 Caddy 自己簽的那張 CA（院內伺服器用）。
         把 CA 打包進 App，好處是不用在 30 支病人手機上一支一支安裝憑證；
         而且信任範圍只有這個 App，不會影響手機上其他程式。
     -->
@@ -588,7 +434,7 @@ keytool -genkeypair -v -keystore kidney-release.jks -alias kidney `
 
 ### 4.4 建置
 
-記得專案路徑含中文會讓 Android 工具失敗，要從純英文路徑的目錄連結執行：
+記得開發機的專案路徑含中文會讓 Android 工具失敗，要從純英文路徑的目錄連結執行：
 
 ```powershell
 # 第一次才需要建連結
@@ -605,7 +451,8 @@ cd android
 
 ### 4.5 怎麼把 APK 發到病人手機上
 
-APK 放到 `D:\kidney\public\app.apk`，病人用手機瀏覽器開：
+APK 放到伺服器的 `D:\kidney\app\public\app.apk`（那個資料夾會被 Caddy 掛成
+`/srv/public`），病人用手機瀏覽器開：
 
 ```
 http://kidney.hosp.local:8080/app.apk
@@ -630,20 +477,21 @@ http://kidney.hosp.local:8080/app.apk
 
 ### 5.1 在那台電腦上
 
-- [ ] `Get-Service postgresql-x64-17, kidney-api, kidney-proxy` 三個都是 Running、StartType 都是 Automatic
-- [ ] `Invoke-RestMethod http://127.0.0.1:4000/api/health` 回 `ok : True`
-- [ ] `Invoke-RestMethod https://kidney.hosp.local/api/health` 回 `ok : True`（走 Caddy，憑證正確）
-- [ ] **重新開機，不要登入，等三分鐘，再測一次上面兩項**
+- [ ] `docker compose -f docker-compose.prod.yml ps` → 兩個容器都是 `running`
+- [ ] `curl.exe http://127.0.0.1:4000/api/health` **應該連不上**（後端沒有對外開 port，這是對的）
+- [ ] `curl.exe -k https://localhost/api/health` 回 `{"ok":true}`（走 Caddy）
+- [ ] **重新開機，不要登入，等五分鐘，再測一次上面兩項** ← 這一項在驗 3.3，
+      而且是最容易在收案第一週出事的地方
 
 ### 5.2 用手機（連病人會用的那個 Wi-Fi）
 
 - [ ] 瀏覽器開 `http://kidney.hosp.local:8080/app.apk` → 下載得到檔案（代表網路通）
 - [ ] 裝好 App，開啟後**不應該**出現「伺服器設定」畫面（代表 4.2 設對了）
 - [ ] 用測試帳號登入成功 ← **這一關過了，表示 HTTPS + 憑證 + CORS 全部正確**
-- [ ] 拍一張餐前照 → 上傳成功；到 `D:\kidney\uploads` 看得到那個檔案
+- [ ] 拍一張餐前照 → 上傳成功
 - [ ] 拍餐後照 → 完成，出現點數和用餐時長
 - [ ] 歷史頁（月曆）看得到剛才那兩張照片
-- [ ] 個人頁拿得到徽章 ← 沒有的話是 `npm run seed` 忘了跑
+- [ ] 個人頁拿得到徽章 ← 沒有的話是 3.7 的 seed 忘了跑
 
 ### 5.3 離線情境（這個方案的核心，一定要測）
 
@@ -677,48 +525,32 @@ http://kidney.hosp.local:8080/app.apk
 **一台電腦上的資料等於沒有備份。** 硬碟壞掉、誤刪一個資料夾、還原卡把系統碟還原，
 三個月的收案就沒了，而且病人不可能再吃一次那些飯。
 
-### 6.1 每日備份腳本
+### 6.1 不可以直接複製資料庫檔案
 
-`D:\kidney\backup.ps1`：
+資料庫開著 WAL 模式，內容分散在 `kidney.db` 與 `kidney.db-wal` 兩個檔案。
+**在有人正在寫入時複製，會拿到一個不完整、還原回來是壞的快照**——
+而且你不會當場發現，是要還原的那天才發現。
 
-```powershell
-# 注意：主控台編碼是 MS950，腳本輸出不要放 emoji，會 UnicodeEncodeError 直接中斷
-$ErrorActionPreference = "Stop"
-$date = Get-Date -Format "yyyyMMdd"
-$dest = "E:\kidney-backup\$date"      # ← 另一顆實體硬碟，不是同一顆的別的分割區
-New-Item -ItemType Directory -Force -Path $dest | Out-Null
+`backup.ps1` 走的是 SQLite 內建的 `VACUUM INTO`：它在交易保護下把整個資料庫寫成一個
+乾淨的新檔案，過程中不需要停服務，產出的檔案可以直接拿來用。
 
-# 1. 資料庫
-$env:PGPASSWORD = "資料庫密碼"
-& "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe" -U kidney_app -h 127.0.0.1 `
-  -d kidney_diet -f "$dest\db.sql"
-Remove-Item Env:\PGPASSWORD
+### 6.2 每日備份
 
-# 2. 照片（robocopy /MIR 會鏡像，含刪除；用 /E 只增量複製比較安全）
-robocopy "D:\kidney\uploads" "$dest\uploads" /E /R:2 /W:5 /NFL /NDL | Out-Null
-
-# 3. 設定檔（.env 裡有密碼，這份備份也要當機密資料保管）
-Copy-Item "D:\kidney\app\backend\.env" "$dest\env.backup"
-
-# 4. 只保留 30 天
-Get-ChildItem "E:\kidney-backup" -Directory |
-  Where-Object { $_.CreationTime -lt (Get-Date).AddDays(-30) } |
-  Remove-Item -Recurse -Force
-
-Write-Output "backup done: $dest"
-```
-
-用工作排程器設每天凌晨三點執行（「不論使用者是否登入均執行」+「以最高權限執行」）：
+repo 裡的 `backup.ps1` 會做三件事：資料庫（`VACUUM INTO`）、照片（從 volume 打包出來）、
+`.env`。先把裡面的路徑改成這台機器的實際路徑（備份目的地要是**另一顆實體硬碟**，
+不是同一顆的別的分割區），然後設工作排程：
 
 ```powershell
 $action  = New-ScheduledTaskAction -Execute "powershell.exe" `
-           -Argument "-NoProfile -ExecutionPolicy Bypass -File D:\kidney\backup.ps1"
+           -Argument "-NoProfile -ExecutionPolicy Bypass -File D:\kidney\app\backup.ps1"
 $trigger = New-ScheduledTaskTrigger -Daily -At 3am
 Register-ScheduledTask -TaskName "kidney-backup" -Action $action -Trigger $trigger `
   -RunLevel Highest -User "SYSTEM"
 ```
 
-### 6.2 異地備份
+> `.env` 裡有 JWT 金鑰，**這份備份也要當機密資料保管**。
+
+### 6.3 異地備份
 
 醫院多半不允許把資料傳到院外雲端。可行的做法：
 
@@ -727,17 +559,20 @@ Register-ScheduledTask -TaskName "kidney-backup" -Action $action -Trigger $trigg
 
 無論哪種，**檔案要加密**。研究資料外洩的責任是你和指導教授的。
 
-### 6.3 每個月實際還原一次
+### 6.4 每個月實際還原一次
 
-沒有驗證過的備份不算備份。找一台別的電腦（或你的開發機）：
+沒有驗證過的備份不算備份。SQLite 的好處是這件事很容易做——備份檔本身就是一個完整的
+資料庫，拿到開發機上直接開就好：
 
 ```powershell
-# 建一個空庫把備份倒回去，確認資料真的完整
-createdb -U postgres kidney_restore_test
-psql -U postgres -d kidney_restore_test -f "E:\kidney-backup\20261101\db.sql"
+# 在開發機上，把備份檔當成資料庫開起來看
+cd backend
+$env:DATABASE_URL = "file:E:/kidney-backup/20261101/kidney.db"
+npx prisma studio
 ```
 
-然後隨便挑三筆紀錄，確認照片檔案在 `uploads` 備份裡也找得到。
+確認：使用者數、用餐紀錄數跟你預期的一致，隨便挑三筆紀錄，
+確認對應的照片檔案在 `uploads` 那份備份裡也找得到。
 
 ---
 
@@ -749,31 +584,37 @@ psql -U postgres -d kidney_restore_test -f "E:\kidney-backup\20261101\db.sql"
 
 | 先測這個 | 結果 | 代表 |
 |---|---|---|
-| 電腦上 `Invoke-RestMethod http://127.0.0.1:4000/api/health` | 失敗 | 後端沒起來 → 看 `D:\kidney\logs\api-error.log` |
-| 電腦上 `Invoke-RestMethod https://kidney.hosp.local/api/health` | 失敗 | Caddy 或憑證問題 → 看 `caddy-error.log` |
-| 手機瀏覽器開 `http://kidney.hosp.local:8080/app.apk` | 下載不了 | 網路不通：用戶端隔離、VLAN、或防火牆 |
-| 手機瀏覽器開 `https://kidney.hosp.local/api/health` | 憑證警告但按「繼續」後看得到 `{"ok":true}` | 網路通、服務正常，**問題在 App 的憑證信任**（瀏覽器不認得你的 CA 是正常的，App 應該要認得） |
+| 電腦上 `docker compose -f docker-compose.prod.yml ps` | 容器不在 running | 看 `logs backend` / `logs caddy` |
+| 電腦上 `curl.exe -k https://localhost/api/health` | 失敗 | Caddy 或後端的問題 → 看 log |
+| 手機瀏覽器開 `http://<SERVER_NAME>:8080/` | 開不了 | 網路不通：用戶端隔離、VLAN、或防火牆（3.10） |
+| 手機瀏覽器開 `https://<SERVER_NAME>/api/health` | 憑證警告但按「繼續」後看得到 `{"ok":true}` | 網路通、服務正常，**問題在 App 的憑證信任**（瀏覽器不認得那張 CA 是正常的，App 應該要認得） |
 | `chrome://inspect` 看 console | `ERR_CLEARTEXT_NOT_PERMITTED` | 4.1 沒做，或 App 連的是 http 網址 |
-| 同上 | `ERR_CERT_AUTHORITY_INVALID` | CA 沒打包進 APK，或 `rootCA.pem` 放錯位置／檔名有大寫 |
-| 同上 | `ERR_NAME_NOT_RESOLVED` | 手機解析不到 `kidney.hosp.local`，院內 DNS 沒設定 → 先改用 IP 驗證 |
+| 同上 | `ERR_CERT_AUTHORITY_INVALID` | CA 沒打包進 APK、`root.crt` 放錯位置、或檔名有大寫 |
+| 同上 | `ERR_NAME_NOT_RESOLVED` | 手機解析不到那個名稱，院內 DNS 沒設定 → 先改用 IP 驗證 |
 | 後端 log 出現「不允許的來源：...」 | | CORS。Capacitor 的 `https://localhost` 已內建放行，會看到這行通常是你用瀏覽器開後台 → 把那個網址加進 `CORS_ORIGIN` |
 
 ### 7.2 其他狀況
 
+```powershell
+# 看 log（排查任何問題的第一步）
+docker compose -f docker-compose.prod.yml logs -f backend
+docker compose -f docker-compose.prod.yml logs -f caddy
+```
+
 | 症狀 | 可能原因 | 怎麼確認 | 處理 |
 |---|---|---|---|
-| **某天早上全部病人都上傳失敗** | 電腦半夜重開，服務沒自動起來 | `Get-Service kidney-api, kidney-proxy, postgresql-x64-17` | 三個都要是 Automatic；`DependOnService` 設對（3.9）。這就是為什麼要先做過一次「重開機不登入」的測試 |
-| **同上，但服務都是 Running** | 電腦的 IP 變了 | `ipconfig` 比對 APK 裡寫死的位址 | 要固定 IP 或院內 DNS。只能用 IP 的話，每次開工先確認 |
-| **病人回診時發現被登出** | refresh token 過期 | 後端 log 的 401 | `JWT_REFRESH_EXPIRES_IN` 要大於回診間隔，預設一年（3.5）。⚠ 改了只對**之後的登入**生效，已經發出去的憑證不會延長 |
-| **病人說「我記錄了很多但你那邊沒有」** | 他回診時沒連 Wi-Fi，或沒打開 App 等它傳完 | App 首頁的待上傳筆數 | 收案 SOP：每次回診衛教師確認歸零。這是這個方案最大的資料流失來源 |
-| **照片上傳回「無法解析這張圖片」** | sharp 解不開檔案 | `api-error.log` | Android 端前端已經把照片壓成 JPEG 才上傳，理論上不會發生；真的遇到，請把那張原始檔留下來 |
-| **上傳很慢（一張要十幾秒）** | 防毒即時掃描 uploads、或 Wi-Fi 訊號弱 | 工作管理員看磁碟使用率 | 把 `D:\kidney\uploads` 和 `D:\kidney\data` 加進防毒排除清單（3.11） |
-| **後端啟動就掛掉，log 說資料庫連不上** | 密碼含特殊字元沒做 URL 編碼 | `api-error.log` | 換成純英數密碼（3.2） |
-| **後端啟動就掛掉，log 說 Missing required env var** | 服務的工作目錄不對，讀不到 `.env` | `nssm edit kidney-api` 看 AppDirectory | 設成 `D:\kidney\app\backend` |
-| **API 回 500，但 TypeScript 編譯沒問題** | 改了 schema 之後忘了 `npx prisma generate` | `api-error.log` | 跑一次 generate 再重啟服務 |
-| **連續天數 / 今日全勤算錯** | 伺服器時間或時區不對 | `w32tm /query /status`、`Get-Date` | 3.3 的設定；時區必須是 Taipei |
-| **磁碟滿了** | 照片 + log + 備份 | `Get-PSDrive D` | 30 人 3 個月的照片約 3GB，但 log 和備份會長大。保持 50GB 以上可用空間，並把備份放別顆硬碟 |
-| **資料庫損毀，起不來** | 突然斷電 | PostgreSQL 服務起不來 | 從最近一次 `pg_dump` 還原（6.3）。這就是 UPS 的用途 |
+| **某天早上全部病人都上傳失敗** | 電腦半夜重開，Docker Desktop 沒自動啟動 | 工作列有沒有鯨魚圖示；`docker compose ps` | 3.3 的兩個設定。這就是為什麼 5.1 要做「重開機不登入」的測試 |
+| **同上，但容器都 running** | 電腦的 IP 變了 | `ipconfig` 比對 APK 裡寫死的位址 | 要固定 IP 或院內 DNS。只能用 IP 的話，每次開工先確認 |
+| **容器一直重啟** | `.env` 沒填完整 | `logs backend` 會看到 `Missing required env var` | 對照 3.6 的表 |
+| **病人回診時發現被登出** | refresh token 過期 | log 裡的 401 | `JWT_REFRESH_EXPIRES_IN` 要大於回診間隔，預設一年（3.6）。⚠ 改了只對**之後的登入**生效，已經發出去的憑證不會延長 |
+| **病人說「我記錄了很多但你那邊沒有」** | 他回診時沒連 Wi-Fi，或沒打開 App 等它傳完 | App 首頁的待上傳筆數 | 收案 SOP：每次回診衛教師確認歸零。**這是這個方案最大的資料流失來源** |
+| **照片上傳回「無法解析這張圖片」** | sharp 解不開檔案 | `logs backend` | Android 端已經把照片壓成 JPEG 才上傳，理論上不會發生；真的遇到，請把那張原始檔留下來 |
+| **上傳很慢（一張要十幾秒）** | 防毒即時掃描、或 Wi-Fi 訊號弱 | 工作管理員看磁碟使用率 | 3.11 的排除清單 |
+| **API 回 500，但 TypeScript 編譯沒問題** | 改了 schema 之後忘了重建 image | `logs backend` | `docker compose -f docker-compose.prod.yml up -d --build` |
+| **一個徽章都發不出來** | 3.7 的 seed 忘了跑 | `exec backend npm run seed` 再跑一次（可重複執行） | — |
+| **連續天數 / 今日全勤算錯** | 伺服器時間或時區不對 | `w32tm /query /status`、`Get-Date` | 3.4 的設定 |
+| **磁碟滿了** | 照片 + log + 備份 | `Get-PSDrive D`；`docker system df` | 30 人 3 個月的照片約 3GB，資料庫只有幾十 MB。保持 50GB 以上可用空間，備份放別顆硬碟 |
+| **資料庫損毀** | 突然斷電 | 後端起不來，log 說 `database disk image is malformed` | 從最近一次備份還原（6.4）。這就是 UPS 的用途 |
 | **某次重開後整台機器回到原狀、程式都不見了** | 還原卡 / Deep Freeze | 問資訊室 | 這台機器不能用。第一節第五個問題就是在防這個 |
 
 ### 7.3 要怎麼知道服務掛了
@@ -781,20 +622,21 @@ psql -U postgres -d kidney_restore_test -f "E:\kidney-backup\20261101\db.sql"
 院內機器連不到外網的話，UptimeRobot 這類外部監測用不了。替代做法：
 
 - **最低限度**：請衛教師每天上班時用手機開一下 App，看得到首頁就代表活著
-- **好一點**：在你自己的筆電上設一個工作排程，每小時打一次
-  `https://kidney.hosp.local/api/health`，失敗就寄信給自己（只在你人在院內時有效）
-- **再好一點**：那台電腦上設一個排程，`/api/health` 失敗就自動重啟服務並寫進 log
+- **好一點**：那台電腦上設一個排程，`/api/health` 失敗就自動重啟並寫進 log
 
 ```powershell
-# D:\kidney\watchdog.ps1 — 每 10 分鐘執行一次
+# D:\kidney\watchdog.ps1 — 工作排程器設每 10 分鐘執行一次
 try {
-    $r = Invoke-RestMethod "http://127.0.0.1:4000/api/health" -TimeoutSec 10
+    $r = Invoke-RestMethod "https://localhost/api/health" -SkipCertificateCheck -TimeoutSec 10
     if (-not $r.ok) { throw "health not ok" }
 } catch {
-    Add-Content "D:\kidney\logs\watchdog.log" "$(Get-Date -Format s) restart: $_"
-    Restart-Service kidney-api
+    Add-Content "D:\kidney\watchdog.log" "$(Get-Date -Format s) restart: $_"
+    docker compose -f D:\kidney\app\docker-compose.prod.yml restart backend
 }
 ```
+
+> `-SkipCertificateCheck` 需要 PowerShell 7。Windows 內建的 5.1 沒有這個參數，
+> 改用 `curl.exe -k -f https://localhost/api/health` 判斷結束代碼。
 
 ---
 
@@ -813,23 +655,24 @@ try {
 
 ### 8.2 IRB 通過之後、開始收第一位病人之前
 
-**清庫重來**，把測試階段的痕跡清乾淨：
+**清庫重來**，把測試階段的痕跡清乾淨。SQLite 的話就是把那個檔案刪掉讓它重建：
 
 ```powershell
-Stop-Service kidney-api
-$env:PGPASSWORD = "postgres 密碼"
-& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -c "DROP DATABASE kidney_diet;"
-& "C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -h 127.0.0.1 -c "CREATE DATABASE kidney_diet OWNER kidney_app;"
-Remove-Item Env:\PGPASSWORD
-Remove-Item "D:\kidney\uploads\*" -Recurse -Force
-cd D:\kidney\app\backend
-npx prisma migrate deploy
-npm run seed
-Start-Service kidney-api
+cd D:\kidney\app
+docker compose -f docker-compose.prod.yml down
+
+# 刪掉資料庫與照片的 volume（⚠ 不要連 caddy_data 一起刪，那裡面是 CA）
+docker volume rm app_db_data app_uploads_data
+
+# 換掉兩組 JWT 金鑰（測試期間它們可能出現在截圖、報告、跟同學的對話裡）
+notepad .env
+
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml exec backend npm run seed
 ```
 
-並且把 `.env` 裡的兩組 JWT secret **換成新的**（測試期間它們可能出現在截圖、報告、
-跟同學的對話裡）。
+> volume 的名稱前綴是資料夾名稱，用 `docker volume ls` 確認實際名稱。
+> **`caddy_data` 千萬不要刪**——理由見 3.9。
 
 ### 8.3 還沒做完、但收案前必須完成的程式面項目
 
@@ -839,7 +682,7 @@ Start-Service kidney-api
       而你的研究要談用餐時長。⚠ 必須在壓縮之前讀取，壓縮會把 EXIF 移除
 - [ ] `participantCode` 假名化欄位
 - [ ] 同意書欄位 `consentedAt` / `consentVersion` / `withdrawnAt`
-- [ ] 幫衛教師開好 `RESEARCHER` 帳號（3.7）
+- [ ] 幫衛教師開好 `RESEARCHER` 帳號（3.8）
 
 ### 8.4 同意書要寫到的事（院內自架版本）
 
@@ -870,8 +713,8 @@ Windows 的「行動熱點」或接一個 USB Wi-Fi 網卡，讓那台電腦自�
 | Windows ICS 的閘道 IP 固定是 `192.168.137.1`，**永遠不會變**，寫死在 APK 裡很安全 | 熱點要有人記得開著 |
 | 沒有用戶端隔離問題 | 病人連上後沒有網際網路，要跟他說明 |
 
-憑證就簽給 `192.168.137.1`（mkcert 支援 IP），`.env.production` 填
-`https://192.168.137.1/api`。
+`.env` 的 `SERVER_NAME` 填 `192.168.137.1`，`.env.production` 填
+`https://192.168.137.1/api`。Caddy 的 `tls internal` 對 IP 一樣會簽憑證。
 
 > 要先確認那台電腦有 Wi-Fi 網卡、而且 GPO 沒有禁止建立熱點。
 > 另外**不要自己插一台無線 AP 到院內網路**——那在多數醫院是明文禁止的行為。
@@ -880,24 +723,30 @@ Windows 的「行動熱點」或接一個 USB Wi-Fi 網卡，讓那台電腦自�
 
 跟實驗室或教授申請一台小主機（迷你 PC 約 NT$8,000），放在衛教室，
 不走醫院的公用電腦。這樣就沒有還原卡、GPO、別人關機的問題，
-但網路問題還是要資訊室協助。
+但網路問題還是要資訊室協助。**順帶解決 Docker Desktop 的授權問題**：
+自己的機器可以裝 Linux 跑免授權費的 Docker Engine。
 
 ### 9.3 回去用方案 A（雲端）
 
 [DEPLOY.md](./DEPLOY.md) 還在。病人可以在家隨時上傳，資料流失風險最低，
-但資料在境外，IRB 可能有意見——這正是當初 [MEETING_0930.md 5.1](./MEETING_0930.md)
-那個還沒決定的問題。
+但資料在境外，IRB 可能有意見——這正是
+[MEETING_0930.md 5.1](./MEETING_0930.md) 那個還沒決定的問題。
+
+> ⚠ 資料庫改成 SQLite 之後，**Render 免費方案的檔案系統是 ephemeral，重啟就清空**。
+> 真要走這條路得加掛 Persistent Disk（付費），或那條路改回 PostgreSQL。
+> `render.yaml` 和 DEPLOY.md 裡都有警告。
 
 ### 9.4 混合：主機在雲端、備份在院內
 
-主機放 Render，每週 `pg_dump` 一份加密後存到醫院/實驗室的機器。
+主機放雲端，每週把備份檔加密後存到醫院/實驗室的機器。
 兩邊的優點都拿到一些，但境外傳輸的問題沒有解決。
 
 ---
 
 ## 十、一句話總結這份手冊
 
-**技術上最容易卡住的是 3.8（HTTPS／憑證），因為錯誤訊息會騙你；
+**技術上最容易卡住的是 3.9 / 4.1（HTTPS 與憑證），因為錯誤訊息會騙你——
+App 只會說「無法連線到伺服器」，真正的原因要接 `chrome://inspect` 才看得到；
 流程上最容易出事的是「病人的資料一直留在手機裡沒上傳」，因為它不會報錯。
 而最該今天就去做的，是第一節跟資訊室談、第二節帶手機去測連線——
 那兩件事決定這個方案到底成不成立，而且不需要寫任何程式。**

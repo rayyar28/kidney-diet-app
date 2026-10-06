@@ -42,7 +42,7 @@ copy .env.example .env
 notepad .env
 ```
 
-三組密鑰各產一次（沒裝 Node 也沒關係，用 Docker 跑）：
+兩組密鑰各產一次（沒裝 Node 也沒關係，用 Docker 跑）。資料庫是 SQLite，不需要密碼：
 
 ```powershell
 docker run --rm node:20-alpine node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -64,7 +64,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 徽章資料要手動灌一次（不跑的話遊戲化會正常運作但一個徽章都發不出來，而且不會報錯）：
 
 ```powershell
-docker compose -f docker-compose.prod.yml exec backend npx tsx prisma/seed.ts
+docker compose -f docker-compose.prod.yml exec backend npm run seed
 ```
 
 確認活著：
@@ -87,7 +87,8 @@ New-NetFirewallRule -DisplayName "Kidney APK" -Direction Inbound -Protocol TCP `
   -LocalPort 8080 -RemoteAddress 192.168.1.0/24 -Action Allow
 ```
 
-`db` 和 `backend` 在 compose 裡沒有開 port，不需要也不應該開 5432 / 4000。
+`backend` 在 compose 裡沒有開 port（只有 Caddy 進得來），不需要也不應該開 4000。
+資料庫是檔案，沒有任何埠。
 
 ---
 
@@ -148,7 +149,13 @@ cd android
 .\backup.ps1
 ```
 
-每個月實際還原一次確認備份能用。沒驗證過的備份不算備份。
+> ⚠️ **不要自己改成「複製 kidney.db」**。資料庫開著 WAL 模式，內容分散在 `.db` 與
+> `.db-wal`，在有人寫入時複製會拿到還原不回來的壞檔，而你會在要還原的那天才發現。
+> `backup.ps1` 走的是 SQLite 內建的 `VACUUM INTO` 線上備份。
+
+每個月實際還原一次確認備份能用——備份檔本身就是一個完整的資料庫，在開發機上設
+`DATABASE_URL=file:<備份路徑>` 再 `npx prisma studio` 就能直接打開看。
+沒驗證過的備份不算備份。
 
 ---
 
@@ -169,8 +176,12 @@ docker compose -f docker-compose.prod.yml up -d --build
 # 開衛教師帳號（要先註冊過那個 email）
 docker compose -f docker-compose.prod.yml exec backend npm run grant-role -- nurse@hospital.tw RESEARCHER
 
-# 直接看資料
-docker compose -f docker-compose.prod.yml exec db psql -U kidney_app -d kidney_diet
+# 備份資料庫（backup.ps1 裡面跑的就是這個）
+docker compose -f docker-compose.prod.yml exec backend npm run backup:db -- /tmp/kidney.db
+
+# 想直接翻資料：把備份檔抓出來，在開發機上用 Prisma Studio 打開
+# （不要在容器裡跑 studio，它開在沒有對外的 5555 埠，連不到）
+docker compose -f docker-compose.prod.yml cp backend:/tmp/kidney.db D:\kidney\peek.db
 ```
 
 ## 出事了先看這三個
