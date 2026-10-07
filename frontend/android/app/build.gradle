@@ -11,8 +11,8 @@ android {
         // 一直停在 1 的話手機會把每個版本都當成同一版，病人與衛教師也無法從
         // 「應用程式資訊」看出手機上裝的是哪一版。
         // 1-3 = v0.1.0 / v0.2.0 / v0.3.0 三個試用版（當時忘了加）。
-        versionCode 4
-        versionName "0.4.0-trial"
+        versionCode 5
+        versionName "0.5.0-trial"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

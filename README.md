@@ -14,7 +14,7 @@
 
 | | |
 |---|---|
-| **直接下載** | [kidney-diet-trial-v0.4.0.apk](https://github.com/rayyar28/kidney-diet-app/releases/download/v0.4.0-trial/kidney-diet-trial-v0.4.0.apk)（3.9 MB，Android） |
+| **直接下載** | [kidney-diet-trial-v0.5.0.apk](https://github.com/rayyar28/kidney-diet-app/releases/download/v0.5.0-trial/kidney-diet-trial-v0.5.0.apk)（3.9 MB，Android） |
 | **所有版本** | [Releases](https://github.com/rayyar28/kidney-diet-app/releases) |
 
 安裝時 Android 會擋一次「不允許安裝未知的應用程式」，允許瀏覽器安裝即可。
