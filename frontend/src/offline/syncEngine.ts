@@ -31,7 +31,9 @@ export async function refreshCounts(): Promise<void> {
   }
   const meals = await listLocalMeals(user.id);
   useSyncStore.getState().patch({
-    pendingCount: meals.filter((m) => !m.failure && hasPendingWork(m)).length,
+    // localOnly 的紀錄本來就不會上傳，算進來的話「還有 N 筆等待上傳」會永遠消不掉，
+    // 登出時也會跳一個永遠無法解決的警告。
+    pendingCount: meals.filter((m) => !m.localOnly && !m.failure && hasPendingWork(m)).length,
     failedCount: meals.filter((m) => m.failure !== null).length,
   });
 }
@@ -146,7 +148,8 @@ export function requestSync(opts: { force?: boolean } = {}): Promise<RunResult |
   return running;
 }
 
-export type SyncOutcome = "synced" | "pending" | { failed: string };
+/** local = 這筆是本機專屬的紀錄（從試用模式帶進來的），不會上傳，也不是「還在等上傳」 */
+export type SyncOutcome = "synced" | "pending" | "local" | { failed: string };
 
 /**
  * 給「剛送出一筆紀錄」的畫面用：立刻試著上傳，最多等 timeoutMs。
@@ -158,6 +161,9 @@ export async function syncAndWait(mealId: string, timeoutMs = 8000): Promise<Syn
   const meal = await getLocalMeal(mealId);
   if (!meal) return "synced";
   if (meal.failure) return { failed: meal.failure.message };
+  // 本機專屬的紀錄 hasPendingWork 永遠是 true（它的照片永遠不會被標成已同步），
+  // 不先攔下來的話畫面會告訴病人「有網路就會自動上傳」——那是一個不會發生的承諾。
+  if (meal.localOnly) return "local";
   return hasPendingWork(meal) ? "pending" : "synced";
 }
 

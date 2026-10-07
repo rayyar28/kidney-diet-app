@@ -44,6 +44,9 @@ const KIND_RANK: Record<SyncEventKind, number> = { PRE: 0, POST: 1, ABANDON: 2, 
 export function buildEvents(meals: LocalMeal[], nowMs: number): SyncEvent[] {
   const events: SyncEvent[] = [];
   for (const m of meals) {
+    // 本機專屬的紀錄永遠不產生上傳事件。這是「試用資料不會進伺服器」的唯一守門處，
+    // 拆掉它等於讓 IRB 尚未核准的照片上傳（見 types.ts 的 localOnly）。
+    if (m.localOnly) continue;
     if (m.failure || m.nextAttemptAt > nowMs) continue;
     if (m.pre && !m.pre.synced) events.push({ mealId: m.id, kind: "PRE", at: m.pre.capturedAt });
     if (m.post && !m.post.synced) events.push({ mealId: m.id, kind: "POST", at: m.post.capturedAt });
@@ -145,7 +148,7 @@ export function mergeMeals(server: MealRecord[], locals: LocalMeal[]): MealView[
       notes: l.notes ?? existing?.notes ?? null,
       photos: existing?.photos,
       createdAt: existing?.createdAt ?? l.createdAtLocal,
-      sync: failed ? "failed" : pending ? "pending" : "synced",
+      sync: l.localOnly ? "local" : failed ? "failed" : pending ? "pending" : "synced",
       failureMessage: l.failure?.message ?? null,
       preThumbDataUrl: preThumb,
       postThumbDataUrl: postThumb,

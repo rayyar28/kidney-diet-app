@@ -44,6 +44,17 @@ export interface LocalMeal {
   nextAttemptAt: number;
   /** 第一次遇到「可疑 5xx」的時間 (ms epoch)；成功上傳後清掉 */
   firstSuspectAt?: number;
+  /**
+   * 這一筆只留在這支手機，**永遠不會上傳**。
+   *
+   * 目前只有一個來源：使用者在試用模式記錄、登入後選擇「帶進帳號」的紀錄
+   * （見 trial/trialData.ts 的 importTrialMeals）。IRB 尚未核准，試用期間拍的照片
+   * 不能進伺服器，但也不該因為登入就憑空消失，所以帶進來之後標記成本機專屬。
+   *
+   * 守門的地方只有一個：`buildEvents` 不會為這種紀錄產生任何上傳事件。
+   * 另外它是這份資料的**唯一一份**，所以 `pruneSyncedMeals` 絕對不能清掉它。
+   */
+  localOnly?: boolean;
   createdAtLocal: string;
 }
 
@@ -56,7 +67,8 @@ export interface SyncEvent {
   at: string;
 }
 
-export type MealSyncState = "synced" | "pending" | "failed";
+/** local = 只留在這支手機、不會上傳的紀錄（從試用模式帶進來的） */
+export type MealSyncState = "synced" | "pending" | "failed" | "local";
 
 /** 畫面上顯示用的「合併後」紀錄：伺服器資料 + 本機還沒上傳完的狀態 */
 export interface MealView extends MealRecord {

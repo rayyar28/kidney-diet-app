@@ -15,6 +15,7 @@ import { ServerSetupPage } from "./pages/ServerSetupPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { StaffResetPage } from "./pages/StaffResetPage";
+import { ImportTrialPage } from "./pages/ImportTrialPage";
 import { needsApiBaseSetup } from "./api/config";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -64,6 +65,15 @@ export default function App() {
         element={
           <RequireAuth>
             <DashboardPage />
+          </RequireAuth>
+        }
+      />
+      {/* 登入後若手機上還有試用紀錄，先問一次要不要帶進這個帳號 */}
+      <Route
+        path="/import-trial"
+        element={
+          <RequireAuth>
+            <ImportTrialPage />
           </RequireAuth>
         }
       />

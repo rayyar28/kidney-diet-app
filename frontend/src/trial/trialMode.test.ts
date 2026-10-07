@@ -1,11 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDbForTests } from "../offline/db";
-import { createLocalMeal, listLocalMeals } from "../offline/mealStore";
-import { refreshCounts, requestSync, resetSyncEngineForTests } from "../offline/syncEngine";
+import { buildEvents, mergeMeals } from "../offline/logic";
+import { POINTS, projectGamification } from "../gamification/replay";
+import { attachPostPhoto, createLocalMeal, listLocalMeals, pruneSyncedMeals } from "../offline/mealStore";
+import { refreshCounts, requestSync, resetSyncEngineForTests, syncAndWait } from "../offline/syncEngine";
 import { useSyncStore } from "../offline/syncStore";
 import type { MealView } from "../offline/types";
 import { TRIAL_USER_ID, isTrialMode, useAuthStore } from "../store/auth";
-import { clearTrialData, loadTrialProfile, saveTrialProfile } from "./trialData";
+import {
+  clearTrialData,
+  importTrialMeals,
+  loadTrialProfile,
+  markTrialImportAsked,
+  pendingTrialImportCount,
+  saveTrialProfile,
+} from "./trialData";
 import { asTrialViews } from "./views";
 
 /*
@@ -180,5 +189,159 @@ describe("試用模式的紀錄不該顯示同步狀態", () => {
     const original = view({ sync: "synced" });
     const [out] = asTrialViews([original]);
     expect(out).toBe(original); // 沒有要改的就不複製
+  });
+});
+
+/*
+ * 登入後把試用紀錄帶進帳號。
+ *
+ * 這是唯一一條讓試用資料離開 trial-local-user 的路，所以守得特別緊：
+ * 帶進來之後它仍然**絕對不能上傳**，而且它是那份資料的唯一一份、不能被清掉。
+ */
+describe("把試用紀錄帶進登入的帳號", () => {
+  async function makeTrialMeal(at = "2026-09-01T04:00:00.000Z") {
+    return createLocalMeal({
+      userId: TRIAL_USER_ID,
+      mealType: "LUNCH",
+      notes: null,
+      file: photo(),
+      capturedAt: new Date(at),
+    });
+  }
+
+  beforeEach(() => {
+    localStorage.removeItem("kidney-diet-trial-import-asked");
+  });
+
+  it("帶進來之後，紀錄屬於該帳號且標記成本機專屬", async () => {
+    await makeTrialMeal();
+    const moved = await importTrialMeals("u1");
+
+    expect(moved).toBe(1);
+    const mine = await listLocalMeals("u1");
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.localOnly).toBe(true);
+  });
+
+  it("是「搬」不是「複製」：試用模式底下不會再留一份", async () => {
+    await makeTrialMeal();
+    await importTrialMeals("u1");
+
+    // 留著的話同一批紀錄會被算兩次點數，而且還能再帶進第二個帳號
+    expect(await listLocalMeals(TRIAL_USER_ID)).toHaveLength(0);
+  });
+
+  it("帶進來的紀錄請求同步時，一個 API 都不會發出", async () => {
+    await makeTrialMeal();
+    await importTrialMeals("u1");
+
+    // 正常登入狀態（有 token、同步引擎會真的跑）
+    useAuthStore.getState().setSession(realUser, "token", "refresh");
+    expect(isTrialMode()).toBe(false);
+
+    await requestSync({ force: true });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("帶進來的紀錄不會產生任何上傳事件", async () => {
+    await makeTrialMeal();
+    await importTrialMeals("u1");
+    const meals = await listLocalMeals("u1");
+
+    expect(buildEvents(meals, Date.parse("2030-01-01T00:00:00.000Z"))).toEqual([]);
+  });
+
+  it("不會被當成「待上傳」算進計數裡", async () => {
+    await makeTrialMeal();
+    await importTrialMeals("u1");
+    useAuthStore.getState().setSession(realUser, "token", "refresh");
+
+    await refreshCounts();
+    // 算進去的話，畫面會永遠顯示「還有 1 筆等待上傳」，登出時也會跳一個解不掉的警告
+    expect(useSyncStore.getState().pendingCount).toBe(0);
+  });
+
+  it("絕對不會被定期清理刪掉（伺服器上沒有備份）", async () => {
+    await makeTrialMeal("2020-01-01T00:00:00.000Z"); // 遠比保留期限舊
+    await importTrialMeals("u1");
+
+    await pruneSyncedMeals("u1", { keep: 0, maxAgeDays: 1 });
+
+    expect(await listLocalMeals("u1")).toHaveLength(1);
+  });
+
+  it("在畫面上標成 local，不是「待上傳」", async () => {
+    await makeTrialMeal();
+    await importTrialMeals("u1");
+    const meals = await listLocalMeals("u1");
+
+    const views = mergeMeals([], meals);
+    expect(views[0]!.sync).toBe("local");
+  });
+
+  it("點數照算（本機算得到，而且伺服器永遠不會重複算一次）", async () => {
+    await makeTrialMeal();
+    await importTrialMeals("u1");
+    const meals = await listLocalMeals("u1");
+
+    // 伺服器那邊完全不知道這筆，所以基準是 0，手機自己算出餐前點數
+    const summary = projectGamification(null, meals);
+    expect(summary.totalPoints).toBe(POINTS.PRE_MEAL_LOGGED + POINTS.BADGE_AWARDED);
+  });
+
+  it("沒有試用紀錄就不會跳提示", async () => {
+    expect(await pendingTrialImportCount("u1")).toBe(0);
+  });
+
+  it("有試用紀錄就會跳提示，回答過之後不再問同一個帳號", async () => {
+    await makeTrialMeal();
+    expect(await pendingTrialImportCount("u1")).toBe(1);
+
+    markTrialImportAsked("u1");
+    expect(await pendingTrialImportCount("u1")).toBe(0);
+    // 但資料還在：使用者只是這次不想帶，下次進試用模式還看得到
+    expect(await listLocalMeals(TRIAL_USER_ID)).toHaveLength(1);
+  });
+
+  it("換另一個帳號登入還是會問（上一個帳號的回答不算數）", async () => {
+    await makeTrialMeal();
+    markTrialImportAsked("u1");
+
+    expect(await pendingTrialImportCount("u2")).toBe(1);
+  });
+
+  it("試用模式自己不會被問要不要帶進自己", async () => {
+    await makeTrialMeal();
+    expect(await pendingTrialImportCount(TRIAL_USER_ID)).toBe(0);
+    expect(await importTrialMeals(TRIAL_USER_ID)).toBe(0);
+  });
+});
+
+/*
+ * 補拍餐後照時不能騙病人。帶進來的紀錄 hasPendingWork 永遠是 true
+ * （照片永遠不會被標成已同步），所以 syncAndWait 必須先認出它是本機專屬的，
+ * 否則完成畫面會寫「有網路就會自動上傳」——一個不會發生的承諾。
+ */
+describe("補拍帶進來的那一餐", () => {
+  it("syncAndWait 回 local，不是 pending", async () => {
+    const meal = await createLocalMeal({
+      userId: TRIAL_USER_ID,
+      mealType: "LUNCH",
+      notes: null,
+      file: photo(),
+      capturedAt: new Date("2026-09-01T04:00:00.000Z"),
+    });
+    await importTrialMeals("u1");
+    useAuthStore.getState().setSession(realUser, "token", "refresh");
+
+    await attachPostPhoto({
+      userId: "u1",
+      mealId: meal.id,
+      file: photo(),
+      capturedAt: new Date("2026-09-01T04:40:00.000Z"),
+    });
+
+    expect(await syncAndWait(meal.id, 50)).toBe("local");
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

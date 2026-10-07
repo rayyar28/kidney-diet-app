@@ -218,7 +218,10 @@ export async function pruneSyncedMeals(userId: string, opts: { keep?: number; ma
   const cutoff = Date.now() - (opts.maxAgeDays ?? 60) * 86_400_000;
   const meals = await listLocalMeals(userId);
   const synced = meals
-    .filter((m) => !hasPendingWork(m) && !m.failure)
+    // localOnly 的紀錄伺服器上沒有備份，清掉就真的不見了，一律不碰。
+    // （它們的 synced 永遠是 false，hasPendingWork 本來就會擋住，這裡寫明是為了
+    //   萬一哪天 hasPendingWork 的定義改了，不會默默變成刪掉病人資料。）
+    .filter((m) => !m.localOnly && !hasPendingWork(m) && !m.failure)
     .sort((a, b) => Date.parse(b.preAt) - Date.parse(a.preAt));
   const toDelete = synced.filter((m, i) => i >= keep || Date.parse(m.preAt) < cutoff);
   for (const m of toDelete) await idb.delete(STORE_MEALS, m.id);

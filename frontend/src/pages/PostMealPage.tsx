@@ -44,8 +44,12 @@ interface Result {
    */
   summary: GamificationSummary;
   newBadgeCodes: string[];
-  /** 這一餐還在等上傳 (離線)：數字是對的，只是東西還沒送出去 */
-  pending: boolean;
+  /**
+   * 畫面底下要補一句什麼：
+   * - pending：離線，數字是對的，只是東西還沒送出去
+   * - local  ：從試用模式帶進來的紀錄，永遠不會上傳（不能說「有網路就會自動上傳」）
+   */
+  note: "pending" | "local" | null;
 }
 
 export function PostMealPage() {
@@ -139,7 +143,7 @@ export function PostMealPage() {
       // 試用模式沒有伺服器，不必等同步，直接算
       if (trial) {
         const summary = await summaryNow();
-        setResult({ durationSeconds, summary, newBadgeCodes: newBadgesSince(beforeSummary, summary), pending: false });
+        setResult({ durationSeconds, summary, newBadgeCodes: newBadgesSince(beforeSummary, summary), note: null });
         return;
       }
 
@@ -168,7 +172,7 @@ export function PostMealPage() {
         durationSeconds,
         summary,
         newBadgeCodes: newBadgesSince(beforeSummary, summary),
-        pending: outcome === "pending",
+        note: outcome === "pending" ? "pending" : outcome === "local" ? "local" : null,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "儲存失敗，請再試一次");
@@ -198,7 +202,8 @@ export function PostMealPage() {
           </div>
 
           {/* 離線時仍然要講清楚東西還在手機裡，但點數已經算進去了，不要讓病人以為白做 */}
-          {result.pending && <p className="page-hint">已存在手機裡，有網路就會自動上傳</p>}
+          {result.note === "pending" && <p className="page-hint">已存在手機裡，有網路就會自動上傳</p>}
+          {result.note === "local" && <p className="page-hint">🧪 試用紀錄，只留在這支手機、不會上傳</p>}
 
           {newBadges.length > 0 && (
             <>

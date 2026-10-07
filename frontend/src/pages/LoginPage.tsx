@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError, NetworkError } from "../api/client";
 import { isNativeApp } from "../api/config";
 import { useAuthStore } from "../store/auth";
+import { pendingTrialImportCount } from "../trial/trialData";
 import type { AuthUser } from "../api/types";
 
 export function LoginPage() {
@@ -25,7 +26,9 @@ export function LoginPage() {
         { skipAuth: true }
       );
       setSession(data.user, data.accessToken, data.refreshToken);
-      navigate("/");
+      // 這支手機上還留著試用模式的紀錄 → 先問一次要不要帶進這個帳號
+      const trialMeals = await pendingTrialImportCount(data.user.id).catch(() => 0);
+      navigate(trialMeals > 0 ? "/import-trial" : "/");
     } catch (err) {
       if (err instanceof NetworkError) setError("目前沒有網路，請連上網路再登入");
       else setError(err instanceof ApiError ? err.message : "登入失敗，請稍後再試");

@@ -139,6 +139,8 @@ export function HistoryDayPage() {
                   {meal.status === "AWAITING_POST_PHOTO" && <span className="tag tag-waiting">待補餐後照</span>}
                   {meal.sync === "pending" && <span className="tag">☁️ 待上傳</span>}
                   {meal.sync === "failed" && <span className="tag tag-failed">⚠️ 上傳失敗</span>}
+                  {/* 試用期間拍的、登入後帶進來的紀錄。講明不會上傳，才不會被當成卡住的待上傳 */}
+                  {meal.sync === "local" && <span className="tag">🧪 試用紀錄·不會上傳</span>}
                 </div>
 
                 {meal.notes && <div className="record-meta">📝 {meal.notes}</div>}

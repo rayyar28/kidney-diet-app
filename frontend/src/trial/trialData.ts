@@ -1,4 +1,4 @@
-import { deleteLocalMeal, listLocalMeals } from "../offline/mealStore";
+import { deleteLocalMeal, listLocalMeals, mutateMeal } from "../offline/mealStore";
 import { TRIAL_USER_ID } from "../store/auth";
 
 /**
@@ -49,4 +49,71 @@ export async function clearTrialData(): Promise<void> {
   } catch {
     /* 同上 */
   }
+}
+
+/* ---------- 把試用紀錄帶進登入的帳號 ---------- */
+
+/**
+ * 問過哪些帳號「要不要帶進來」了。
+ *
+ * 使用者說「不用」之後就不該每次登入再問一次——但也不能直接把試用資料刪掉，
+ * 他可能只是這次不想帶、或是手機借給別人登入。所以只記「問過了」。
+ */
+const ASKED_KEY = "kidney-diet-trial-import-asked";
+
+function readAsked(): string[] {
+  try {
+    const raw = localStorage.getItem(ASKED_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 這個帳號還沒被問過，而且手機上真的有試用紀錄 → 登入後要跳提示 */
+export async function pendingTrialImportCount(userId: string): Promise<number> {
+  if (userId === TRIAL_USER_ID) return 0; // 試用模式自己不用問自己
+  if (readAsked().includes(userId)) return 0;
+  const meals = await listLocalMeals(TRIAL_USER_ID).catch(() => []);
+  return meals.length;
+}
+
+export function markTrialImportAsked(userId: string): void {
+  try {
+    const asked = readAsked();
+    if (!asked.includes(userId)) localStorage.setItem(ASKED_KEY, JSON.stringify([...asked, userId]));
+  } catch {
+    /* 存不進去最多就是下次再問一次，不值得讓畫面壞掉 */
+  }
+}
+
+/**
+ * 把試用期間的紀錄「搬」進登入的帳號。
+ *
+ * **搬，不是複製**：複製的話同一批紀錄會同時存在於試用模式與帳號底下，點數被算兩次，
+ * 而且使用者還能再帶進第二個帳號。
+ *
+ * 搬過來的紀錄一律標記 `localOnly`，**永遠不會上傳**。IRB 尚未核准，試用期間拍的照片
+ * 不能進伺服器；但也沒道理因為登入就讓使用者前幾天的紀錄憑空消失，所以留在本機、
+ * 照常出現在日曆與點數裡，並在畫面上標示「不會上傳」。
+ *
+ * 健康資料（localStorage 的試用設定）不在搬移範圍：正常模式那份存在伺服器上，
+ * 搬過去就等於上傳。
+ *
+ * @returns 實際搬了幾筆
+ */
+export async function importTrialMeals(userId: string): Promise<number> {
+  if (userId === TRIAL_USER_ID) return 0;
+  const meals = await listLocalMeals(TRIAL_USER_ID);
+  let moved = 0;
+  for (const meal of meals) {
+    const ok = await mutateMeal(meal.id, (m) =>
+      // 再確認一次這筆還是試用紀錄：mutateMeal 是重新讀出來的，中間可能已經被別的流程動過
+      m.userId === TRIAL_USER_ID ? { ...m, userId, localOnly: true } : m
+    );
+    if (ok && ok.userId === userId) moved += 1;
+  }
+  markTrialImportAsked(userId);
+  return moved;
 }
