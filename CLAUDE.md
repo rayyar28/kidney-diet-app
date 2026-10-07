@@ -14,7 +14,7 @@
 | `docs/DATABASE.md` | 每張表為什麼長這樣 |
 | `docs/DEPLOY.md` | 部署手冊（方案 A：雲端，**現為備案**）+ **正式收案前必須完成的清單** |
 | `docs/DEPLOY_HOSPITAL.md` | **現行部署方向**：醫院電腦自架 + 院內 Wi-Fi。含資訊室要問什麼、HTTPS/憑證、服務化、APK 打包、備份、故障排除 |
-| `docs/MEETING_0930.md` | 最新進度、卡住的決定 |
+| `docs/MEETING_1007.md` | 最新進度、卡住的決定（前一期是 `MEETING_0930.md`） |
 
 **過期、不要照著做的文件**（保留是為了歷史紀錄）：
 
