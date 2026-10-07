@@ -16,6 +16,13 @@ interface SyncState {
   failedCount: number;
   lastSyncedAt: number | null;
   nextRetryAt: number | null;
+  /**
+   * 最近一次從伺服器拿到的遊戲化摘要。
+   *
+   * 畫面上的點數是「這份摘要 ＋ 本機還沒上傳的紀錄」算出來的
+   * （見 gamification/replay.ts 的 projectGamification），所以它不只是提示用的資料，
+   * 而是顯示數字的基準。登出時會被清掉，避免換帳號時殘留上一個人的數字。
+   */
   lastGamification: GamificationSummary | null;
   /** 最近一輪有上傳成功東西的紀錄，畫面用它跳出「已同步」提示；at 用來辨識是不是新的一輪 */
   lastBatch: { processed: number; at: number } | null;

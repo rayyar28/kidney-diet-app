@@ -36,6 +36,16 @@ function withUserLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
 const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100] as const;
 const MEAL_COUNT_MILESTONES = [10, 50, 100, 200] as const;
 const BREAKFAST_MILESTONE = 10;
+const CORE_MEAL_TYPES = ["BREAKFAST", "LUNCH", "DINNER"] as const;
+
+/**
+ * 「重播基準」要回傳最近幾天的當日主餐完成情況。
+ *
+ * 手機離線時會自己把還沒上傳的紀錄接著往下算（見 frontend/src/gamification/replay.ts）。
+ * 要判斷「補上這一餐會不會湊成當日全勤」，只需要「有待上傳紀錄的那幾天」的狀況，
+ * 而待上傳的紀錄本質上就是最近才拍的，14 天已經遠超過實際需要。
+ */
+const REPLAY_WINDOW_DAYS = 14;
 
 function streakBonusPoints(days: number): number {
   if (days >= 100) return 200;
@@ -236,7 +246,7 @@ async function checkDailyAllMealsBonus(params: {
       userId,
       status: "COMPLETED",
       postMealAt: { gte: dayStart, lt: dayEnd },
-      mealType: { in: ["BREAKFAST", "LUNCH", "DINNER"] },
+      mealType: { in: [...CORE_MEAL_TYPES] },
     },
     select: { mealType: true },
     distinct: ["mealType"],
@@ -266,6 +276,58 @@ async function checkBreakfastBadge(userId: string, mealRecordId: string) {
   }
 }
 
+/**
+ * 手機要「接著往下算」時需要的基準。
+ *
+ * 為什麼不讓手機自己統計全部歷史：本機已同步的紀錄會被定期清掉（見
+ * frontend/src/offline/mealStore.ts 的 pruneSyncedMeals，只留最近 100 筆 / 60 天），
+ * 所以「累計完成幾餐」「連續天數從哪天算起」這些跨越整個收案期的數字，
+ * 手機上根本沒有足夠的資料。伺服器算到哪裡，就從這裡告訴手機。
+ *
+ * **注意這裡刻意不過濾 deletedAt**：上面 checkMealCountBadges / checkBreakfastBadge /
+ * checkDailyAllMealsBonus 也都沒有過濾。已經拿到的點數與徽章不會因為病人之後刪掉紀錄
+ * 就被追討回來（見 docs/DATABASE.md 的軟刪除說明），基準必須跟發放時的判斷一致，
+ * 否則手機會以為某個門檻還沒過、重複發一次。
+ */
+async function getReplayBase(userId: string, lastActiveDate: Date | null) {
+  const windowStart = new Date(Date.now() - REPLAY_WINDOW_DAYS * 86_400_000);
+
+  const [completedMealCount, breakfastCompletedCount, recentCoreMeals] = await Promise.all([
+    prisma.mealRecord.count({ where: { userId, status: "COMPLETED" } }),
+    prisma.mealRecord.count({ where: { userId, status: "COMPLETED", mealType: "BREAKFAST" } }),
+    prisma.mealRecord.findMany({
+      where: {
+        userId,
+        status: "COMPLETED",
+        mealType: { in: [...CORE_MEAL_TYPES] },
+        postMealAt: { gte: windowStart },
+      },
+      select: {
+        mealType: true,
+        postMealAt: true,
+        // 當地日期要用「當初拍餐後照那支手機回報的時區」換算，才會跟發放當日全勤時的判斷一致
+        photos: { where: { phase: "POST_MEAL" }, select: { clientTimezoneOffsetMin: true } },
+      },
+    }),
+  ]);
+
+  const coreMealTypesByDay: Record<string, string[]> = {};
+  for (const meal of recentCoreMeals) {
+    if (!meal.postMealAt) continue; // status 是 COMPLETED 就一定有值，防禦性檢查
+    const key = localDateKey(meal.postMealAt, meal.photos[0]?.clientTimezoneOffsetMin);
+    const types = (coreMealTypesByDay[key] ??= []);
+    if (!types.includes(meal.mealType)) types.push(meal.mealType);
+  }
+
+  return {
+    // lastActiveDate 存的是「當地日期的 UTC 午夜」，所以直接切前 10 個字就是日期字串
+    lastActiveDateKey: lastActiveDate ? lastActiveDate.toISOString().slice(0, 10) : null,
+    completedMealCount,
+    breakfastCompletedCount,
+    coreMealTypesByDay,
+  };
+}
+
 export async function getGamificationSummary(userId: string) {
   const [pointsAgg, streak, earnedBadges, allBadges] = await Promise.all([
     prisma.pointsLedgerEntry.aggregate({ where: { userId }, _sum: { points: true } }),
@@ -288,5 +350,6 @@ export async function getGamificationSummary(userId: string) {
       earned: earnedBadgeIds.has(b.id),
       earnedAt: earnedBadges.find((eb) => eb.badgeId === b.id)?.earnedAt ?? null,
     })),
+    replayBase: await getReplayBase(userId, streak?.lastActiveDate ?? null),
   };
 }

@@ -1,15 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api/client";
-import { listLocalMeals, loadServerCache } from "../offline/mealStore";
 import { useSyncStore } from "../offline/syncStore";
+import { useMealViews } from "../offline/useMealViews";
 import { useAuthStore } from "../store/auth";
 import { useToastStore } from "../store/toast";
-import { computeLocalGamification } from "../trial/gamification";
 import { clearTrialData } from "../trial/trialData";
 import { BottomNav } from "../components/BottomNav";
 import { Toast } from "../components/Toast";
-import type { GamificationSummary } from "../api/types";
 
 /**
  * 個人頁只顯示「我是誰、我累積了什麼」。
@@ -25,36 +21,14 @@ export function ProfilePage() {
   const showToast = useToastStore((s) => s.show);
   const pendingCount = useSyncStore((s) => s.pendingCount);
   const failedCount = useSyncStore((s) => s.failedCount);
-  const [summary, setSummary] = useState<GamificationSummary | null>(null);
-
-  const loadTrialSummary = useCallback(async () => {
-    if (!user) return;
-    const locals = await listLocalMeals(user.id).catch(() => []);
-    setSummary(computeLocalGamification(locals));
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    // 試用模式沒有伺服器，點數/徽章在本機用同一套規則算
-    if (trial) {
-      void loadTrialSummary();
-      return;
-    }
-    // 離線時載不到就用本機快取，不要丟出未處理的錯誤
-    loadServerCache(user.id)
-      .then((cached) => cached?.summary && setSummary(cached.summary))
-      .catch(() => {});
-    api
-      .get<GamificationSummary>("/gamification/summary")
-      .then(setSummary)
-      .catch(() => {});
-  }, [user, trial, loadTrialSummary]);
+  // 跟首頁同一個來源：點數/徽章都是「伺服器算到的結果 ＋ 本機還沒上傳的紀錄」，
+  // 所以離線時這一頁的數字也會把剛拍的那幾餐算進去（見 gamification/replay.ts）。
+  const { summary } = useMealViews();
 
   async function resetTrial() {
     if (!window.confirm("要清除試用期間的所有紀錄嗎？清除後無法復原。\n\n（適合換下一位測試者接手前使用）")) return;
     await clearTrialData();
-    await loadTrialSummary();
-    showToast("已清除試用紀錄");
+    showToast("已清除試用紀錄"); // 畫面會由 onLocalChange 自動更新
   }
 
   function endTrial() {

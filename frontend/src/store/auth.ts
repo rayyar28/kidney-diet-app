@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useSyncStore } from "../offline/syncStore";
 import type { AuthUser } from "../api/types";
 
 /**
@@ -87,6 +88,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   clearAuth: () => {
     localStorage.removeItem(STORAGE_KEY);
+    // 同步引擎在 syncStore 裡留著「伺服器最新的點數摘要」，而畫面是拿它當基準顯示的。
+    // 不清掉的話，同一支手機換下一個人登入時，會先看到上一個人的點數。
+    useSyncStore.getState().patch({ lastGamification: null, lastBatch: null, lastRecovery: null });
     set(EMPTY);
   },
 }));

@@ -51,10 +51,16 @@ async function executeRound(userId: string): Promise<RunResult> {
   const ignoreBackoff = forceNext;
   forceNext = false;
   store.patch({ phase: "syncing" });
-  const result = await runSyncOnce({ userId, transport: apiTransport, ignoreBackoff });
+  const result = await runSyncOnce({
+    userId,
+    transport: apiTransport,
+    ignoreBackoff,
+    // 畫面顯示的點數是「伺服器摘要 ＋ 還沒上傳的紀錄」，所以這一筆被標記成已同步的
+    // 同一瞬間，基準就要換成含有它的新摘要，中間不能有空檔（見 syncRunner 的說明）。
+    onGamification: (summary) => store.patch({ lastGamification: summary }),
+  });
 
   if (result.gamification) {
-    store.patch({ lastGamification: result.gamification });
     await saveServerCache(userId, { summary: result.gamification }).catch(() => {});
   }
   if (result.processed > 0) {

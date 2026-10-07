@@ -15,9 +15,12 @@ import type { LocalMeal, SyncEvent } from "./types";
 
 const UPLOAD_TIMEOUT_MS = 120_000;
 
+/** 餐前/餐後照上傳成功時，伺服器會把重算過的遊戲化摘要一起回傳 */
+type UploadResult = { gamification?: GamificationSummary } | undefined;
+
 export interface SyncTransport {
-  uploadPre(meal: LocalMeal, file: File, sentAtIso: string): Promise<unknown>;
-  uploadPost(meal: LocalMeal, file: File, sentAtIso: string): Promise<{ gamification?: GamificationSummary } | undefined>;
+  uploadPre(meal: LocalMeal, file: File, sentAtIso: string): Promise<UploadResult>;
+  uploadPost(meal: LocalMeal, file: File, sentAtIso: string): Promise<UploadResult>;
   abandon(mealId: string): Promise<unknown>;
   remove(mealId: string): Promise<unknown>;
 }
@@ -34,7 +37,9 @@ export const apiTransport: SyncTransport = {
     if (meal.notes) form.append("notes", meal.notes);
     form.append("capturedOffline", String(pre.capturedOffline));
     form.append("clientSentAt", sentAtIso);
-    return api.post("/meals/pre-meal", form, { timeoutMs: UPLOAD_TIMEOUT_MS });
+    return api.post<{ gamification?: GamificationSummary }>("/meals/pre-meal", form, {
+      timeoutMs: UPLOAD_TIMEOUT_MS,
+    });
   },
   uploadPost(meal, file, sentAtIso) {
     const post = meal.post!;
@@ -147,6 +152,14 @@ export async function runSyncOnce(deps: {
   now?: () => number;
   /** 使用者手動觸發 / 網路恢復時：略過「這一筆還在退避等待」的限制，立刻再試 */
   ignoreBackoff?: boolean;
+  /**
+   * 伺服器隨著上傳回應帶回最新的遊戲化摘要時立刻呼叫（不等整批跑完）。
+   *
+   * 時機很重要：緊接著的 markDone 會把這筆標記成已同步，而畫面上顯示的點數是
+   * 「伺服器的摘要 ＋ 還沒同步的紀錄」。如果等整批結束才更新摘要，這段空檔裡
+   * 這一筆會「兩邊都不算」，病人會看到點數掉下去又跳回來（實測掉 10 分約 0.4 秒）。
+   */
+  onGamification?: (summary: GamificationSummary) => void;
 }): Promise<RunResult> {
   const now = deps.now ?? Date.now;
   const result: RunResult = { processed: 0, postsCompleted: 0, stopped: "done", gamification: null };
@@ -165,13 +178,15 @@ export async function runSyncOnce(deps: {
 
     try {
       const response = await send(event, meal, deps.transport);
+      // 餐前照與餐後照的回應都會帶最新的摘要。一定要在 markDone 之前更新，見上面的說明。
+      const g = (response as { gamification?: GamificationSummary } | undefined)?.gamification;
+      if (g) {
+        result.gamification = g;
+        deps.onGamification?.(g);
+      }
       await markDone(event);
       result.processed++;
-      if (event.kind === "POST") {
-        result.postsCompleted++;
-        const g = (response as { gamification?: GamificationSummary } | undefined)?.gamification;
-        if (g) result.gamification = g;
-      }
+      if (event.kind === "POST") result.postsCompleted++;
     } catch (err) {
       const outcome = classifyError(err, event.kind);
       switch (outcome.type) {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import { CameraCaptureField } from "../components/CameraCaptureField";
@@ -7,7 +7,7 @@ import { attachPostPhoto, discardFailedMeal, getLocalMeal, listLocalMeals, loadS
 import { syncAndWait } from "../offline/syncEngine";
 import { useSyncStore } from "../offline/syncStore";
 import { useAuthStore } from "../store/auth";
-import { computeLocalGamification } from "../trial/gamification";
+import { computeLocalGamification, projectGamification } from "../gamification/replay";
 import type { GamificationSummary, MealRecord } from "../api/types";
 
 const MEAL_TYPE_LABEL: Record<string, string> = {
@@ -35,9 +35,17 @@ function newBadgesSince(before: GamificationSummary | null, after: GamificationS
 
 interface Result {
   durationSeconds: number;
-  /** null = 還沒上傳成功 (離線或太慢)，點數要等連上網路之後才算得出來 */
-  summary: GamificationSummary | null;
+  /**
+   * 完成後的點數/徽章。
+   *
+   * 離線也一定有值：點數是拿伺服器算到的結果當基準、在手機上接著算的
+   * （見 gamification/replay.ts）。病人剛拍完最想看到回饋，這時候說「等有網路再算」
+   * 等於什麼都沒給。
+   */
+  summary: GamificationSummary;
   newBadgeCodes: string[];
+  /** 這一餐還在等上傳 (離線)：數字是對的，只是東西還沒送出去 */
+  pending: boolean;
 }
 
 export function PostMealPage() {
@@ -53,6 +61,14 @@ export function PostMealPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+
+  /** 這一刻該顯示的數字：伺服器算到的結果 ＋ 這支手機上還沒上傳的紀錄 */
+  const summaryNow = useCallback(async (): Promise<GamificationSummary> => {
+    if (!user) throw new Error("未登入");
+    const locals = await listLocalMeals(user.id);
+    if (trial) return computeLocalGamification(locals);
+    return projectGamification(useSyncStore.getState().lastGamification, locals);
+  }, [user, trial]);
 
   useEffect(() => {
     if (!id || !user) return;
@@ -88,20 +104,21 @@ export function PostMealPage() {
           }
         }
       }
-      // 記下「完成前」的徽章狀態，完成後才能算出這次新拿到哪些
-      if (trial) {
-        const locals = await listLocalMeals(user.id);
-        if (!cancelled) setBeforeSummary(computeLocalGamification(locals));
-        return;
+      // 先把「伺服器算到哪」補到最新：直接從通知/網址進到這一頁時，syncStore 可能還是空的
+      if (!trial) {
+        const sync = useSyncStore.getState();
+        if (!sync.lastGamification) {
+          const cached = await loadServerCache(user.id).catch(() => undefined);
+          if (cached?.summary) sync.patch({ lastGamification: cached.summary });
+        }
+        try {
+          sync.patch({ lastGamification: await api.get<GamificationSummary>("/gamification/summary") });
+        } catch {
+          /* 離線：用快取的基準，數字可能少一點，但不會算錯已經拿到的徽章 */
+        }
       }
-      const cached = await loadServerCache(user.id).catch(() => undefined);
-      let before = cached?.summary ?? null;
-      try {
-        before = await api.get<GamificationSummary>("/gamification/summary");
-      } catch {
-        /* 離線：用快取的 */
-      }
-      if (!cancelled) setBeforeSummary(before);
+      // 記下「完成前」的狀態，完成後才能算出這次新拿到哪些徽章
+      if (!cancelled) setBeforeSummary(await summaryNow());
     })();
     return () => {
       cancelled = true;
@@ -119,10 +136,10 @@ export function PostMealPage() {
       const saved = await attachPostPhoto({ userId: user.id, mealId: id, serverMeal: meal, file, capturedAt });
       const durationSeconds = Math.max(0, Math.round((capturedAt.getTime() - Date.parse(saved.preAt)) / 1000));
 
-      // 試用模式沒有伺服器：點數/徽章在本機用同一套規則算，立刻顯示完整的慶祝畫面
+      // 試用模式沒有伺服器，不必等同步，直接算
       if (trial) {
-        const summary = computeLocalGamification(await listLocalMeals(user.id));
-        setResult({ durationSeconds, summary, newBadgeCodes: newBadgesSince(beforeSummary, summary) });
+        const summary = await summaryNow();
+        setResult({ durationSeconds, summary, newBadgeCodes: newBadgesSince(beforeSummary, summary), pending: false });
         return;
       }
 
@@ -143,14 +160,16 @@ export function PostMealPage() {
         return;
       }
 
-      if (outcome === "pending") {
-        setResult({ durationSeconds, summary: null, newBadgeCodes: [] });
-        return;
-      }
-
-      const summary =
-        useSyncStore.getState().lastGamification ?? (await api.get<GamificationSummary>("/gamification/summary"));
-      setResult({ durationSeconds, summary, newBadgeCodes: newBadgesSince(beforeSummary, summary) });
+      // 上傳成功 → 同步引擎已經把基準換成含這一餐的新摘要；
+      // 還在排隊 (outcome === "pending"，通常是離線) → 基準沒變，但這一餐還在本機佇列裡，
+      // 一樣會被算進去。兩種情況用同一個算法，所以離線也看得到點數。
+      const summary = await summaryNow();
+      setResult({
+        durationSeconds,
+        summary,
+        newBadgeCodes: newBadgesSince(beforeSummary, summary),
+        pending: outcome === "pending",
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "儲存失敗，請再試一次");
     } finally {
@@ -159,7 +178,7 @@ export function PostMealPage() {
   }
 
   if (result) {
-    const newBadges = (result.summary?.badges ?? []).filter((b) => result.newBadgeCodes.includes(b.code));
+    const newBadges = result.summary.badges.filter((b) => result.newBadgeCodes.includes(b.code));
     return (
       <div className="app-shell">
         <div className="page page-center">
@@ -167,22 +186,19 @@ export function PostMealPage() {
           <h1 className="page-title">{pickCompletionMessage()}</h1>
           <p style={{ margin: 0 }}>這一餐吃了 {formatDuration(result.durationSeconds)}</p>
 
-          {result.summary ? (
-            <div className="stat-pair">
-              <div className="stat stat-accent">
-                <div className="stat-num">{result.summary.totalPoints}</div>
-                <div className="stat-label">總點數</div>
-              </div>
-              <div className="stat stat-primary">
-                <div className="stat-num">{result.summary.currentStreakDays}</div>
-                <div className="stat-label">連續天</div>
-              </div>
+          <div className="stat-pair">
+            <div className="stat stat-accent">
+              <div className="stat-num">{result.summary.totalPoints}</div>
+              <div className="stat-label">總點數</div>
             </div>
-          ) : (
-            <p className="page-hint" style={{ maxWidth: 300 }}>
-              已存在手機裡，有網路就會自動上傳，並幫你算好點數
-            </p>
-          )}
+            <div className="stat stat-primary">
+              <div className="stat-num">{result.summary.currentStreakDays}</div>
+              <div className="stat-label">連續天</div>
+            </div>
+          </div>
+
+          {/* 離線時仍然要講清楚東西還在手機裡，但點數已經算進去了，不要讓病人以為白做 */}
+          {result.pending && <p className="page-hint">已存在手機裡，有網路就會自動上傳</p>}
 
           {newBadges.length > 0 && (
             <>

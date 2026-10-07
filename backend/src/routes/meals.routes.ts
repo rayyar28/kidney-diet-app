@@ -154,9 +154,13 @@ mealsRouter.post("/pre-meal", uploadPhoto.single("photo"), async (req: AuthedReq
 
     await awardPreMealPoints(userId, mealRecord.id);
 
+    // 跟 post-meal 一樣把最新的摘要一起回傳。手機顯示的點數是「伺服器摘要 ＋ 還沒上傳的紀錄」，
+    // 少了這個，餐前照上傳成功的那一瞬間這筆就「兩邊都不算」，病人會看到點數掉 10 分再跳回來。
+    const gamification = await getGamificationSummary(userId);
+
     res
       .status(ingested.replayed ? 200 : 201)
-      .json({ mealRecord, photo: ingested.photo, replayed: ingested.replayed });
+      .json({ mealRecord, photo: ingested.photo, gamification, replayed: ingested.replayed });
   } catch (err) {
     next(err);
   }
