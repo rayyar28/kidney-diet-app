@@ -15,6 +15,8 @@ import { ServerSetupPage } from "./pages/ServerSetupPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { StaffResetPage } from "./pages/StaffResetPage";
+import { StaffHubPage } from "./pages/StaffHubPage";
+import { StaffCreatePatientPage } from "./pages/StaffCreatePatientPage";
 import { ImportTrialPage } from "./pages/ImportTrialPage";
 import { needsApiBaseSetup } from "./api/config";
 
@@ -114,6 +116,23 @@ export default function App() {
         element={
           <RequireAuth>
             <ProfilePage />
+          </RequireAuth>
+        }
+      />
+      {/* 衛教師工具：收案時幫病人建帳號、病人忘記密碼時開代碼（伺服器端會再檢查權限） */}
+      <Route
+        path="/staff"
+        element={
+          <RequireAuth>
+            <StaffHubPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/staff/patients/new"
+        element={
+          <RequireAuth>
+            <StaffCreatePatientPage />
           </RequireAuth>
         }
       />

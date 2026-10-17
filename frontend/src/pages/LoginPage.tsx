@@ -10,7 +10,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
   const startTrial = useAuthStore((s) => s.startTrial);
-  const [email, setEmail] = useState("");
+  // 病人填研究編號（例如 P0012），衛教師填 email——後端兩種都認得（有 @ 的當 email）
+  const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,7 @@ export function LoginPage() {
     try {
       const data = await api.post<{ user: AuthUser; accessToken: string; refreshToken: string }>(
         "/auth/login",
-        { email, password },
+        { account, password },
         { skipAuth: true }
       );
       setSession(data.user, data.accessToken, data.refreshToken);
@@ -48,14 +49,20 @@ export function LoginPage() {
 
         <div style={{ width: "100%", textAlign: "left" }}>
           <div className="field">
-            <label className="label">Email</label>
+            <label className="label">研究編號</label>
+            {/* 不要自動轉大寫：衛教師在這裡打 email，被轉成大寫就登不進去。
+                病人打小寫的 p0012 沒關係，後端會統一轉大寫、全形轉半形 */}
             <input
               className="input"
-              type="email"
+              type="text"
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="例如 P0012"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={account}
+              onChange={(e) => setAccount(e.target.value)}
             />
           </div>
           <div className="field">
@@ -78,9 +85,10 @@ export function LoginPage() {
         <button className="btn btn-primary" type="submit" form="login-form" disabled={loading}>
           {loading ? "登入中…" : "登入"}
         </button>
-        <Link to="/register" className="btn btn-ghost" style={{ textDecoration: "none" }}>
-          還沒有帳號？建立新帳號
-        </Link>
+        {/* 收案帳號由衛教師建立（伺服器也關閉了自己註冊），這裡不再放「建立新帳號」 */}
+        <p className="page-hint" style={{ textAlign: "center", margin: 0 }}>
+          沒有帳號？請衛教師幫你建立
+        </p>
         <Link to="/forgot-password" className="link-btn" style={{ textAlign: "center" }}>
           忘記密碼？
         </Link>

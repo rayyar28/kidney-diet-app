@@ -12,6 +12,7 @@ profileRouter.get("/", async (req: AuthedRequest, res, next) => {
       where: { id: req.user!.id },
       select: {
         id: true,
+        patientRef: true,
         email: true,
         displayName: true,
         role: true,

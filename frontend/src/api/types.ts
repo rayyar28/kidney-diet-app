@@ -62,9 +62,19 @@ export interface GamificationSummary {
   replayBase?: ReplayBase;
 }
 
+/**
+ * 登入的使用者。
+ *
+ * 病人帳號由衛教師建立，只有研究編號（patientRef，例如 P0012），**沒有 email、沒有姓名**——
+ * 這是醫院端「病人身分只用研究編號」的規定。衛教師帳號與舊帳號才有 email / displayName。
+ * 畫面上要顯示「這是誰」時，一律用 store/auth.ts 的 accountLabel()，不要直接讀某一個欄位。
+ *
+ * 舊版存在手機裡的登入資料沒有 patientRef（undefined），所以三個都要當成可能沒有值。
+ */
 export interface AuthUser {
   id: string;
-  email: string;
-  displayName: string;
+  email: string | null;
+  patientRef?: string | null;
+  displayName: string | null;
   role: "PATIENT" | "RESEARCHER" | "ADMIN";
 }

@@ -13,7 +13,8 @@
 | `docs/ARCHITECTURE.md` | 架構與**每個決定的理由**（離線優先、試用模式、忘記密碼、存相簿） |
 | `docs/DATABASE.md` | 每張表為什麼長這樣 |
 | `docs/DEPLOY.md` | 部署手冊（方案 A：雲端，**現為備案**）+ **正式收案前必須完成的清單** |
-| `docs/DEPLOY_HOSPITAL.md` | **現行部署方向**：醫院電腦自架 + 院內 Wi-Fi。含資訊室要問什麼、HTTPS/憑證、服務化、APK 打包、備份、故障排除 |
+| `docs/HOSPITAL_BACKEND.md` | **醫院主機實際的部署方式**（2026-10-18）：隨附 node.exe 的離線安裝包、用醫院 CA 的憑證、port 9443、研究編號帳號、編號 1～10 的操作腳本。**改後端前先讀** |
+| `docs/DEPLOY_HOSPITAL.md` | 醫院自架的背景：資訊室要問什麼、連線測試、IRB 時間線仍適用；**它的 Docker 安裝章節在那台主機上不可行**（不是系統管理員、沒有網路），以 HOSPITAL_BACKEND.md 為準 |
 | `docs/MEETING_0930.md` | 最新進度、卡住的決定 |
 
 **過期、不要照著做的文件**（保留是為了歷史紀錄）：
@@ -39,6 +40,15 @@
 - **帳號是衛教師在收案時幫病人建的**，不是病人自己註冊。所以：病人可能從沒打過自己的密碼、
   填的信箱可能收不到信。任何「寄信給病人」的設計都不能當成唯一出路。
 - **不做安全問答找回密碼。** 年長者答不出自己填的答案的機率，比攻擊者猜對還高。
+- **病人帳號只有研究編號（`patient_ref`），不存姓名、病歷號、email。** 醫院端的規定，也寫在送資訊室的申請書上。
+  病人帳號由衛教師在 App 裡建（`POST /api/staff/patients`）；**公開註冊預設關閉**
+  （`ALLOW_PUBLIC_REGISTRATION`，只有開發機與檢查腳本打開）——否則院內訪客 Wi-Fi 上的人拿到 APK 就能上傳到研究資料庫。
+  衛教師帳號只能在主機上建（`npm run account -- create-staff`），刻意沒有 API。
+- **後端自己提供 HTTPS 時，不能相信 `X-Forwarded-For`。** 醫院主機前面沒有代理，相信它等於讓攻擊者自己決定
+  限流看到的 IP；研究編號又是流水號。`TRUST_PROXY` 沒設時，有設 TLS 就自動是 false。
+  `check:hospital` 有一項專門測這個，變異測試確認拿掉保護後連續 21 次猜密碼都不會被擋。
+- **醫院主機的 IP、CA、主機名稱不能進版控**（repo 是公開的）。放在 `deploy/hospital.local.json`（已忽略）；
+  打包醫院版 APK 用 `frontend/scripts/hospital-apk.mjs apply` / `restore`，忘記 restore 前端測試會失敗。
 - **`appId`（`tw.edu.project.kidneydiet`）發佈後不能改。** 改了就無法覆蓋安裝，
   而解除安裝會清掉手機裡還沒上傳的離線紀錄。
 - **遊戲化規則在前後端各有一份**。這是刻意的重複：病人常常是離線的，點數要在手機上
@@ -88,6 +98,13 @@
   .\gradlew.bat assembleDebug
   ```
   `android/local.properties` 沒進版控，換電腦要自己建，內容是 `sdk.dir=D:/android-sdk`（**斜線**）。
+- **醫院主機不能用 Docker**：不是系統管理員、連不到 npm / PyPI、8080 不能用。後端用
+  `node deploy/windows/build-bundle.mjs` 包成離線 zip（含 node.exe 與 Windows 原生檔）帶過去解壓縮。
+- **`deploy/windows/app/*.bat` 只能有 ASCII，而且要 CRLF**：主機主控台是 MS950，`.bat` 裡有中文會壞；
+  只有 LF 的 `.bat` 遇到 goto/標籤會出錯（`.gitattributes` 已設 `*.bat eol=crlf`）。中文說明寫在 Node 工具裡。
+- **停 dev server 要整棵程序樹一起停**：只砍佔 port 的子程序，`tsx watch` 的父程序會留下來，累積下來會
+  佔著 SQLite 的鎖（`database is locked`）。2026-10-18 一次清出 13 個。
+- **「應該拒絕啟動」的檢查一定要有逾時**：保護被拿掉時伺服器會正常啟動，沒有逾時的話檢查會永遠卡住而不是失敗。
 - **PowerShell 是 5.1**：沒有 `&&`、`??`、三元運算子。
 - **主控台編碼是 MS950**：腳本輸出含 emoji 會 `UnicodeEncodeError` 直接中斷。
 - **Git Bash 的 `/tmp` 路徑 Windows Python 看不懂**，要先 `cygpath -w` 轉換。
@@ -110,7 +127,7 @@
 ## 常用指令
 
 ```bash
-# 前端：測試（158 項）／建置
+# 前端：測試（188 項）／建置
 cd frontend && npm test
 cd frontend && npm run build
 
@@ -120,8 +137,17 @@ cd backend && npm run build
 # 忘記密碼的端到端檢查（36 項，含惡意情境）— 動到 auth 相關就跑一次
 cd backend && npm run check:password-reset
 
-# 把帳號升級成衛教師/研究人員（改完要重新登入才生效）
-cd backend && npm run grant-role -- nurse@hospital.tw RESEARCHER
+# 醫院主機設定的端到端檢查（37 項：HTTPS、研究編號、限流、防睡眠）— 動到帳號、啟動、設定就跑一次
+# 需要 openssl（Git for Windows 有附）
+cd backend && npm run check:hospital
+
+# 帳號工具（主機上是 6_staff_account.bat）
+cd backend && npm run account -- create-staff nurse@example.invalid 12345678 王衛教師
+cd backend && npm run grant-role -- nurse@example.invalid RESEARCHER   # = account set-role
+cd backend && npm run account -- summary
+
+# 醫院主機用的離線安裝包 → release/kidney-hospital-<版本>.zip
+node deploy/windows/build-bundle.mjs
 
 # 一次啟動資料庫 + 後端 + 前端
 ./start-dev.ps1

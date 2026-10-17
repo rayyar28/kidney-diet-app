@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useAuthStore } from "../store/auth";
+import { accountLabel, useAuthStore } from "../store/auth";
 import { BottomNav } from "../components/BottomNav";
 import { ElapsedTimer } from "../components/ElapsedTimer";
 import { SyncStatusBar } from "../components/SyncStatusBar";
@@ -48,7 +48,7 @@ export function DashboardPage() {
       <div className="top-bar">
         <div>
           <div className="page-hint">哈囉</div>
-          <div className="page-title">{user?.displayName ?? "朋友"}</div>
+          <div className="page-title">{accountLabel(user) || "朋友"}</div>
         </div>
         <div className="stat-pair">
           <div className="stat stat-accent">

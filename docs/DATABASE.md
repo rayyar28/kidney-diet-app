@@ -34,9 +34,10 @@ erDiagram
 
     User {
         string id PK
-        string email
+        string patient_ref "研究編號，病人用"
+        string email "衛教師與舊帳號用"
         string passwordHash
-        string displayName
+        string displayName "病人帳號為空"
         enum role
     }
     PatientProfile {
@@ -105,9 +106,24 @@ erDiagram
 ## 各資料表的設計理由
 
 ### `User` / `RefreshToken`
-基本帳號資訊與登入機制。`role` 目前用到 `PATIENT` 與 `RESEARCHER`（衛教師代病人重設密碼時
-需要），`ADMIN` 仍是預留。角色**不能自助申請**：註冊一律是 `PATIENT`，要升級只能由管理者在
-伺服器上跑 `npm run grant-role`。
+基本帳號資訊與登入機制。
+
+**病人帳號只有研究編號（`patient_ref`），沒有姓名、沒有 email。** 這是醫院端的規定
+（「病人身分只用研究編號，不存姓名或病歷號」），也是送資訊室申請書上寫的資安措施。
+欄位名稱刻意跟醫院端那套系統一樣叫 `patient_ref`，日後兩邊資料要對照時不用轉換。
+存進來之前一律轉成標準形式：全形轉半形（注音輸入法常打出「Ｐ００１２」）、轉大寫、去掉空白。
+
+- `patient_ref`、`email` 都可以是空的，但每個帳號至少有一個；登入欄位有 `@` 就當 email 找，
+  沒有就當研究編號找，所以研究編號裡不能有 `@`。
+- `email` 留給衛教師/研究人員帳號，以及研究編號制度（2026-10-18）之前建立的舊帳號。
+- `displayName` 只有衛教師帳號會填；病人帳號是 `NULL`，畫面上顯示研究編號。
+
+**帳號怎麼來的**：病人帳號由衛教師在 App 裡建立（`POST /api/staff/patients`），
+正式環境**不開放自己註冊**（`ALLOW_PUBLIC_REGISTRATION` 預設關閉）——否則院內訪客 Wi-Fi 上
+任何拿到 APK 的人都能開帳號、上傳照片到研究資料庫。衛教師帳號只能在主機上建
+（`npm run account -- create-staff`；醫院主機上是 `6_staff_account.bat`），沒有對應的 API。
+
+`role` 用到 `PATIENT` 與 `RESEARCHER`（衛教師），`ADMIN` 仍是預留。
 
 ### `PasswordResetToken`（一次性的密碼重設代碼）
 病人忘記密碼時用的。設計上有幾個刻意的選擇，理由見

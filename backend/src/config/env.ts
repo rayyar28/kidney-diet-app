@@ -22,6 +22,36 @@ function parseOrigins(raw: string): string[] {
 
 const storageDriver = (process.env.STORAGE_DRIVER ?? "local") as "local" | "r2";
 
+const tlsCertFile = process.env.TLS_CERT_FILE ?? "";
+const tlsKeyFile = process.env.TLS_KEY_FILE ?? "";
+if (Boolean(tlsCertFile) !== Boolean(tlsKeyFile)) {
+  // 只設一個多半是打錯字。默默退回 HTTP 的話，手機會因為連不上 https 而一直失敗，很難查
+  throw new Error("TLS_CERT_FILE 與 TLS_KEY_FILE 要嘛都設、要嘛都不設（現在只設了其中一個）");
+}
+/** 由這個程式自己提供 HTTPS（醫院主機），而不是躲在 Caddy / Render 之類的代理後面 */
+const servingTlsDirectly = Boolean(tlsCertFile && tlsKeyFile);
+
+/**
+ * 要不要相信 X-Forwarded-For 標頭（express 的 "trust proxy"）。
+ *
+ * 只有「前面真的有一台反向代理」時才能相信它。速率限制是依來源 IP 計算的，
+ * 如果前面沒有代理卻相信這個標頭，任何人每次請求都換一個假的 X-Forwarded-For，
+ * 就能讓每一次猜密碼都算成「新的 IP」——限流形同虛設。
+ * 醫院主機是 Node 直接面對手機，前面沒有代理，所以預設不相信。
+ *
+ *   沒設定 → 自己提供 HTTPS 時是 false，否則是 1（維持 Render / Docker+Caddy 原本的行為）
+ *   TRUST_PROXY=false 或 0 → 不相信
+ *   TRUST_PROXY=1（或其他正整數）→ 相信前面幾層代理
+ */
+function resolveTrustProxy(raw: string | undefined): number | false {
+  if (raw === undefined || raw.trim() === "") return servingTlsDirectly ? false : 1;
+  const v = raw.trim().toLowerCase();
+  if (v === "false" || v === "0") return false;
+  const n = Number(v);
+  if (Number.isInteger(n) && n > 0) return n;
+  throw new Error(`無法解析的 TRUST_PROXY: "${raw}"（可用 false / 1 / 2 …）`);
+}
+
 /**
  * 把 jsonwebtoken 格式的效期字串換算成毫秒（"30d" / "15m" / "3600s"，純數字視為秒）。
  *
@@ -43,6 +73,45 @@ export function parseDurationMs(value: string): number {
 export const env = {
   // Render / Cloud Run 等平台會自己注入 PORT，一定要讀它而不是寫死
   port: Number(process.env.PORT ?? 4000),
+
+  /** 監聽哪個網路介面。預設所有介面；真正擋人的是防火牆規則（只開給病人 Wi-Fi 網段） */
+  host: process.env.HOST ?? "0.0.0.0",
+
+  /**
+   * 自己提供 HTTPS（醫院主機用）。憑證是醫院端自建 CA 簽的那一張 server.crt / server.key，
+   * 跟醫院原本那套後端用的是同一組，不必另外產生，也不會出現第二張 CA。
+   * 兩個都沒設就是一般 HTTP（開發、Docker+Caddy、Render）。
+   */
+  tls: {
+    enabled: servingTlsDirectly,
+    certFile: tlsCertFile,
+    keyFile: tlsKeyFile,
+    /** server.key 有設密碼時才需要 */
+    keyPassphrase: process.env.TLS_KEY_PASSPHRASE ?? "",
+  },
+
+  /**
+   * 手機用來連這台主機的位址（通常就是主機 IP）。有設的話，啟動時會檢查
+   * 憑證是不是簽給這個位址——簽錯位址的憑證，手機會直接拒絕連線，而且錯誤訊息很難看懂。
+   */
+  publicHost: (process.env.PUBLIC_HOST ?? "").trim(),
+
+  trustProxy: resolveTrustProxy(process.env.TRUST_PROXY),
+
+  /**
+   * 執行期間不讓 Windows 進入睡眠（醫院主機用）。診間電腦預設閒置一陣子就會睡，
+   * 睡著的時候病人在候診區怎麼按都傳不上來。只在這個程式執行期間有效，不會改電源設定。
+   */
+  keepAwake: process.env.KEEP_AWAKE === "true",
+
+  /**
+   * 開放「任何人自己註冊帳號」。**預設關閉。**
+   *
+   * 收案的帳號一律由衛教師建立（研究編號 + 初始密碼）。開放註冊的話，
+   * 院內訪客 Wi-Fi 上任何拿到 APK 的人都能開帳號、上傳照片到研究資料庫。
+   * 只有本機開發、或跑會自己註冊測試帳號的檢查腳本時才打開。
+   */
+  allowPublicRegistration: process.env.ALLOW_PUBLIC_REGISTRATION === "true",
 
   databaseUrl: required("DATABASE_URL"),
 

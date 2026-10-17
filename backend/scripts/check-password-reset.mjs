@@ -29,8 +29,8 @@ function check(name, passed, detail = "") {
 }
 
 /**
- * 後端有 `app.set("trust proxy", 1)`，所以 express-rate-limit 是依 X-Forwarded-For 分桶的。
- * 每次請求預設帶一個新的假 IP，檢查腳本就不會被自己的限流擋住——
+ * 這個腳本啟動的後端明確設了 TRUST_PROXY=1（見下面的 spawn），所以 express-rate-limit
+ * 是依 X-Forwarded-For 分桶的。每次請求預設帶一個新的假 IP，檢查腳本就不會被自己的限流擋住——
  * **不必為了跑檢查在程式裡留一個「關閉限流」的開關**（那種開關萬一被設到正式環境就等於沒有限流）。
  * 限流本身另外用固定 IP 驗（見「7. 速率限制」）。
  */
@@ -320,6 +320,14 @@ async function startServer() {
       PORT: String(PORT),
       MAIL_DRIVER: "console",
       APP_URL: "",
+      // 這個腳本自己註冊測試帳號（正式環境的註冊是關的）
+      ALLOW_PUBLIC_REGISTRATION: "true",
+      // 用假的 X-Forwarded-For 隔開每個請求的限流（見上面 freshIp 的說明）。
+      // 正式的醫院主機前面沒有代理，是 false——那個情況由 check-hospital.mjs 驗證。
+      TRUST_PROXY: "1",
+      // 不能沿用開發者 .env 裡的 TLS 設定：這裡用的是 http://
+      TLS_CERT_FILE: "",
+      TLS_KEY_FILE: "",
     },
   });
   child.stdout.on("data", (d) => {

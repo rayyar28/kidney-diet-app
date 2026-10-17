@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuthStore } from "../store/auth";
+import { accountLabel, useAuthStore } from "../store/auth";
 import { useToastStore } from "../store/toast";
 import { importTrialMeals, markTrialImportAsked, pendingTrialImportCount } from "../trial/trialData";
 
@@ -62,7 +62,7 @@ export function ImportTrialPage() {
         <div style={{ fontSize: 64 }}>🧪</div>
         <h1 className="page-title">發現 {count} 筆試用紀錄</h1>
         <p style={{ margin: 0, maxWidth: 300 }}>
-          要把它們一起帶進「{user?.displayName}」的帳號嗎？
+          要把它們一起帶進「{accountLabel(user)}」的帳號嗎？
         </p>
         <p className="page-hint" style={{ maxWidth: 300 }}>
           帶進來之後，這些紀錄會出現在日曆和點數裡，但只會留在這支手機，

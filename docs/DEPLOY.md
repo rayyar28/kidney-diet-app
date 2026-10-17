@@ -234,7 +234,7 @@ docker compose up --build
 
 - [ ] **EXIF 拍攝時間**（`exifCapturedAt` + `captureSource`）— 否則從相簿選的照片時間不可信。
       ⚠ **必須在壓縮之前讀取**，因為壓縮會把 EXIF 移除。
-- [ ] `participantCode` 假名化欄位
+- [x] ~~`participantCode` 假名化欄位~~ → 2026-10-18 以研究編號 `patient_ref` 完成（病人帳號不存姓名、由衛教師建立，見 [HOSPITAL_BACKEND.md](./HOSPITAL_BACKEND.md)）
 - [ ] 同意書欄位 `consentedAt` / `consentVersion` / `withdrawnAt`
 - [ ] **設定好寄信**（`MAIL_DRIVER=resend` + 已驗證網域）並實際收一封重設信。
       沒設的話病人按「忘記密碼」會看到成功畫面，但信永遠不會到——這是最容易漏掉的一項，
