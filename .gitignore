@@ -25,3 +25,10 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 .devdata/
 *.tsbuildinfo
+
+# 醫院主機的實際設定（IP、port、CA 路徑）。repo 是公開的，這些會指出是哪一家醫院，不能進版控。
+deploy/hospital.local.json
+# 打包醫院版 APK 時暫時放進去的 CA（scripts/hospital-apk.mjs apply 產生、restore 刪掉）
+frontend/android/app/src/main/res/raw/hospital_ca.pem
+# 給醫院主機的離線安裝包（scripts/build-hospital-bundle.mjs 產生）
+release/

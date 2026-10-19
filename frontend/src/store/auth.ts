@@ -24,9 +24,19 @@ export const TRIAL_USER_ID = "trial-local-user";
 const TRIAL_USER: AuthUser = {
   id: TRIAL_USER_ID,
   email: "試用模式，資料只存在這支手機",
+  patientRef: null,
   displayName: "試用者",
   role: "PATIENT",
 };
+
+/**
+ * 畫面上「這是誰」：有名字用名字（衛教師、舊帳號），病人帳號用研究編號。
+ * 病人帳號沒有姓名是刻意的（醫院端規定只用研究編號），不是資料缺漏。
+ */
+export function accountLabel(user: Pick<AuthUser, "displayName" | "patientRef" | "email"> | null | undefined): string {
+  if (!user) return "";
+  return user.displayName ?? user.patientRef ?? user.email ?? "";
+}
 
 interface Session {
   user: AuthUser | null;

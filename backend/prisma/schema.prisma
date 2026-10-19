@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// 腎臟病飲食紀錄 App — 資料庫 Schema (PostgreSQL, 透過 Prisma 管理)
+// 腎臟病飲食紀錄 App — 資料庫 Schema (SQLite, 透過 Prisma 管理)
 //
 // 設計原則：
 // 1. 每一張照片都獨立成一筆 Photo 記錄，帶有完整的技術中繼資料 (時間、像素、
@@ -27,11 +27,23 @@ datasource db {
 // ============================== 使用者 / 帳號 ==============================
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
+  id String @id @default(uuid())
+
+  // ---- 登入帳號：研究編號 或 email，至少要有一個 ----
+  //
+  // 醫院端的規定是「病人身分只用研究編號，不存姓名或病歷號」（送資訊室的申請書上也是這樣寫）。
+  // 所以收案的病人帳號由衛教師建立、只有 patientRef，沒有 email、沒有姓名。
+  // email 留給衛教師/研究人員帳號，以及這個版本之前建立的舊帳號（不能讓它們登不進來）。
+  //
+  // 欄位名稱刻意跟醫院端那套系統一樣叫 patient_ref，日後兩邊資料要對照時不用再轉換。
+  // 存進來之前一律經過 normalizePatientRef（全形轉半形、轉大寫），見 src/domain/account.ts。
+  patientRef String? @unique @map("patient_ref")
+  email      String? @unique
+
   passwordHash String
-  displayName  String
-  role         String   @default("PATIENT") // PATIENT | RESEARCHER | ADMIN
+  /// 只有衛教師/研究人員帳號會填。病人帳號是 null——畫面上改顯示研究編號。
+  displayName  String?
+  role         String  @default("PATIENT") // PATIENT | RESEARCHER | ADMIN
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

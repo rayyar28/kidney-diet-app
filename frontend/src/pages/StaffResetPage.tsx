@@ -1,12 +1,12 @@
 import { FormEvent, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { api, ApiError, NetworkError } from "../api/client";
-import { useAuthStore } from "../store/auth";
+import { accountLabel, useAuthStore } from "../store/auth";
 
 interface IssuedCode {
   code: string;
   expiresInMinutes: number;
-  user: { email: string; displayName: string };
+  user: { patientRef: string | null; email: string | null; displayName: string | null };
 }
 
 /**
@@ -16,12 +16,13 @@ interface IssuedCode {
  * 對他們沒有用。回診時當面確認身分再開一組代碼，是身分驗證最強、也最實際的一條路。
  *
  * 這一頁只有 RESEARCHER / ADMIN 進得來（伺服器端也會再擋一次，不是只靠前端隱藏）。
- * 角色不能自助申請，要由管理者在伺服器上跑 `npm run grant-role`。
+ * 角色不能自助申請，要由管理者在主機上執行帳號工具（6_staff_account.bat / npm run account）。
  */
 export function StaffResetPage() {
   const navigate = useNavigate();
   const role = useAuthStore((s) => s.user?.role);
-  const [email, setEmail] = useState("");
+  // 研究編號（病人）或 email（舊帳號），後端兩種都認得
+  const [account, setAccount] = useState("");
   const [issued, setIssued] = useState<IssuedCode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,7 +38,7 @@ export function StaffResetPage() {
     setIssued(null);
     setLoading(true);
     try {
-      setIssued(await api.post<IssuedCode>("/staff/password-resets", { email }));
+      setIssued(await api.post<IssuedCode>("/staff/password-resets", { account }));
     } catch (err) {
       if (err instanceof NetworkError) setError("目前沒有網路，請連上網路再試");
       else setError(err instanceof ApiError ? err.message : "開立失敗，請稍後再試");
@@ -52,9 +53,7 @@ export function StaffResetPage() {
         <div className="top-bar">
           <div>
             <h1 className="page-title">代碼已開立</h1>
-            <p className="page-hint">
-              {issued.user.displayName}（{issued.user.email}）
-            </p>
+            <p className="page-hint">{accountLabel(issued.user)}</p>
           </div>
         </div>
 
@@ -74,12 +73,12 @@ export function StaffResetPage() {
             className="btn btn-secondary"
             onClick={() => {
               setIssued(null);
-              setEmail("");
+              setAccount("");
             }}
           >
             幫下一位病人開立
           </button>
-          <button className="btn btn-ghost" onClick={() => navigate("/profile")}>
+          <button className="btn btn-ghost" onClick={() => navigate("/staff")}>
             完成
           </button>
         </div>
@@ -98,15 +97,17 @@ export function StaffResetPage() {
 
       <form id="staff-reset-form" className="page" onSubmit={onSubmit}>
         <div className="field">
-          <label className="label">病人的 Email</label>
+          <label className="label">病人的研究編號</label>
           <input
             className="input"
-            type="email"
+            type="text"
             autoCapitalize="none"
             autoCorrect="off"
+            spellCheck={false}
+            placeholder="例如 P0012"
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={account}
+            onChange={(e) => setAccount(e.target.value)}
           />
         </div>
         {error && <p className="error-text">{error}</p>}
@@ -119,7 +120,7 @@ export function StaffResetPage() {
         <button className="btn btn-primary" type="submit" form="staff-reset-form" disabled={loading}>
           {loading ? "開立中…" : "開立重設代碼"}
         </button>
-        <button className="btn btn-ghost" onClick={() => navigate("/profile")}>
+        <button className="btn btn-ghost" onClick={() => navigate("/staff")}>
           返回
         </button>
       </div>

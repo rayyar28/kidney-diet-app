@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import type { PasswordResetSource } from "../domain/enums.js";
 import { prisma } from "../prisma.js";
+import { accountLabel, findUserByAccount } from "../domain/account.js";
 import { env } from "../config/env.js";
 import { generateResetCode, hashResetCode, isWellFormedResetCode, normalizeResetCode } from "../utils/resetCode.js";
 
@@ -61,31 +62,35 @@ async function issueCode(params: {
 export async function requestSelfServiceReset(email: string): Promise<
   | null
   | (IssuedResetCode & {
-      user: { id: string; email: string; displayName: string };
+      user: { id: string; email: string; label: string };
     })
 > {
   const user = await prisma.user.findUnique({
     where: { email },
-    select: { id: true, email: true, displayName: true },
+    select: { id: true, email: true, displayName: true, patientRef: true },
   });
-  if (!user) return null;
+  // 用研究編號建立的病人帳號沒有 email，本來就不會走到這條路（他們找衛教師代開代碼）
+  if (!user || !user.email) return null;
   const issued = await issueCode({ userId: user.id, source: "SELF_SERVICE" });
-  return { ...issued, user };
+  return { ...issued, user: { id: user.id, email: user.email, label: accountLabel(user) } };
 }
 
 /** 衛教師/研究人員當面確認身分後代開。找不到帳號時要明確報錯——這裡沒有列舉風險，
- *  操作者本來就已經通過身分驗證，而且他需要知道是不是打錯 email。 */
-export async function issueStaffReset(params: {
-  email: string;
-  issuedById: string;
-}): Promise<(IssuedResetCode & { user: { id: string; email: string; displayName: string } }) | null> {
-  const user = await prisma.user.findUnique({
-    where: { email: params.email },
-    select: { id: true, email: true, displayName: true },
-  });
+ *  操作者本來就已經通過身分驗證，而且他需要知道是不是打錯了。
+ *  帳號可以是研究編號（病人）或 email（舊帳號）。 */
+export async function issueStaffReset(params: { account: string; issuedById: string }): Promise<
+  | (IssuedResetCode & {
+      user: { id: string; email: string | null; patientRef: string | null; displayName: string | null };
+    })
+  | null
+> {
+  const user = await findUserByAccount(params.account);
   if (!user) return null;
   const issued = await issueCode({ userId: user.id, source: "STAFF", issuedById: params.issuedById });
-  return { ...issued, user };
+  return {
+    ...issued,
+    user: { id: user.id, email: user.email, patientRef: user.patientRef, displayName: user.displayName },
+  };
 }
 
 export type ResetOutcome = { ok: true } | { ok: false; reason: "invalid" | "expired" | "used" };

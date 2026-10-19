@@ -14,6 +14,7 @@ import {
 } from "../middleware/rateLimit.middleware.js";
 import { getMailer } from "../services/mailer.service.js";
 import { buildResetUrl, requestSelfServiceReset, resetPasswordWithCode } from "../services/passwordReset.service.js";
+import { findUserByAccount, publicUser, readAccount, verifyPassword } from "../domain/account.js";
 
 export const authRouter = Router();
 
@@ -48,8 +49,16 @@ async function issueTokenPair(userId: string, role: string) {
   return { accessToken, refreshToken };
 }
 
+/**
+ * 自己註冊帳號。**正式環境（醫院）是關閉的**：收案帳號一律由衛教師建立（見 staff.routes.ts
+ * 的 POST /patients），否則院內訪客 Wi-Fi 上任何拿到 APK 的人都能開帳號、上傳照片到研究資料庫。
+ * 只有本機開發與檢查腳本會用 ALLOW_PUBLIC_REGISTRATION=true 打開。
+ */
 authRouter.post("/register", registerLimiter, async (req, res, next) => {
   try {
+    if (!env.allowPublicRegistration) {
+      throw new HttpError(403, "帳號由衛教師建立，請洽衛教師");
+    }
     const body = registerSchema.parse(req.body);
     const existing = await prisma.user.findUnique({ where: { email: body.email } });
     if (existing) {
@@ -66,36 +75,31 @@ authRouter.post("/register", registerLimiter, async (req, res, next) => {
     await prisma.userStreak.create({ data: { userId: user.id } });
 
     const tokens = await issueTokenPair(user.id, user.role);
-    res.status(201).json({
-      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
-      ...tokens,
-    });
+    res.status(201).json({ user: publicUser(user), ...tokens });
   } catch (err) {
     next(err);
   }
 });
 
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string(),
-});
+const passwordField = z.object({ password: z.string() });
 
+/**
+ * 登入：帳號可以是研究編號（病人）或 email（衛教師、舊帳號）。
+ * 新版 App 送 `account`，舊版送 `email`，兩個都收（見 domain/account.ts 的 readAccount）。
+ */
 authRouter.post("/login", loginLimiter, async (req, res, next) => {
   try {
-    const body = loginSchema.parse(req.body);
-    const user = await prisma.user.findUnique({ where: { email: body.email } });
-    if (!user) {
-      throw new HttpError(401, "email 或密碼錯誤");
-    }
-    const valid = await bcrypt.compare(body.password, user.passwordHash);
-    if (!valid) {
-      throw new HttpError(401, "email 或密碼錯誤");
+    const account = readAccount(req.body);
+    const { password } = passwordField.parse(req.body);
+    const user = await findUserByAccount(account);
+    // 帳號不存在也照樣做一次密碼比對，「沒有這個編號」跟「密碼錯」要花一樣久、回一樣的話。
+    // 研究編號是 P0001、P0002 這種流水號，回應時間不能洩漏哪些編號已經收案。
+    const valid = await verifyPassword(user?.passwordHash ?? null, password);
+    if (!user || !valid) {
+      throw new HttpError(401, "帳號或密碼錯誤");
     }
     const tokens = await issueTokenPair(user.id, user.role);
-    res.json({
-      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role },
-      ...tokens,
-    });
+    res.json({ user: publicUser(user), ...tokens });
   } catch (err) {
     next(err);
   }
@@ -162,7 +166,7 @@ authRouter.post("/forgot-password", forgotPasswordLimiter, async (req, res, next
     void getMailer()
       .sendPasswordReset({
         to: issued.user.email,
-        displayName: issued.user.displayName,
+        displayName: issued.user.label,
         code: issued.code,
         resetUrl: buildResetUrl(issued.code),
         expiresInMinutes: minutes,

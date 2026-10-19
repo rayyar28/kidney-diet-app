@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    預設版本（進版控的就是這一份）：只信任手機系統內建的 CA，全站禁止明文 http。
+    行為跟沒有這個檔案時完全一樣。
+
+    打包「醫院版」APK 時，frontend/scripts/hospital-apk.mjs 會暫時把這個檔案換成
+    「醫院主機只信任醫院自建 CA」的版本（憑證鎖定），建置完再換回來。
+    醫院主機的 IP 與 CA 不能進版控：repo 是公開的，那兩樣東西會指出是哪一家醫院。
+
+    frontend/src/test/networkSecurityConfig.test.ts 會檢查這個檔案維持預設內容，
+    忘記換回來就會測試失敗，避免把醫院的設定 commit 出去。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

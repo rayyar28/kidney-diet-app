@@ -188,9 +188,14 @@ claude_app/
 
 ### 角色不能自助申請
 
-註冊一律是 `PATIENT`。要變成 `RESEARCHER` / `ADMIN` 只能由管理者在伺服器上執行
-`npm run grant-role -- <email> RESEARCHER`，所以不存在「有人靠 API 把自己變成研究人員」
-的可能。權限寫在 access token 裡，**改完角色要重新登入才會生效**。
+病人帳號由衛教師在 App 裡建立（只有研究編號，見 [DATABASE.md](./DATABASE.md) 的 `User`），一律是 `PATIENT`；
+正式環境不開放自己註冊。衛教師帳號（`RESEARCHER`）只能由管理者在主機上建立或升級
+（`npm run account -- create-staff` / `npm run grant-role -- <帳號> RESEARCHER`；醫院主機上是
+`6_staff_account.bat`），所以不存在「有人靠 API 把自己變成研究人員」的可能。
+權限寫在 access token 裡，**改完角色要重新登入才會生效**。
+
+醫院主機版（Node 直接提供 HTTPS、研究編號帳號、離線安裝包）的完整說明見
+[HOSPITAL_BACKEND.md](./HOSPITAL_BACKEND.md)。
 
 前端會隱藏一般病人看不到的畫面，但那只是體感——真正的檢查在後端的 `requireRole`。
 

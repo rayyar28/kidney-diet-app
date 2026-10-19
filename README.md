@@ -46,6 +46,7 @@
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 整體架構、為什麼這樣選型、離線優先設計、未來怎麼接辨識模型 |
 | [docs/DATABASE.md](docs/DATABASE.md) | 資料庫每張表的設計理由、ER 圖、研究用欄位的用途 |
+| [docs/HOSPITAL_BACKEND.md](docs/HOSPITAL_BACKEND.md) | **醫院主機版後端**：為什麼不能用 Docker、改了什麼、怎麼驗證、上線步驟（2026-10-18） |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | 正式環境部署手冊（Render + Neon + R2 + Cloudflare Pages）與費用試算 |
 | [docs/MEETING_0930.md](docs/MEETING_0930.md) | **最新的進度報告**（09/22–09/30）：本週完成什麼、卡在哪、需要老師決定什麼 |
 | [docs/MEETING_0916.md](docs/MEETING_0916.md) | 前一期進度報告（09/16–09/22），另有[一頁版](docs/MEETING_0916_onepage.md) |
@@ -174,7 +175,7 @@ VITE_API_BASE_URL=https://你的網域/api npm run build
 ## 常用指令
 
 ```powershell
-# 前端：自動化測試（離線同步、試用模式共 135 項）
+# 前端：自動化測試（共 188 項）
 cd frontend; npm test
 
 # 前端：正式建置（含型別檢查）
@@ -189,8 +190,15 @@ cd backend; npm run prisma:studio
 # 後端：改完 schema 後套用變更
 cd backend; npm run prisma:migrate
 
-# 後端：把某個帳號升級成衛教師/研究人員（改完要重新登入才生效）
-cd backend; npm run grant-role -- nurse@hospital.tw RESEARCHER
+# 後端：帳號工具——建衛教師帳號 / 改權限 / 看收了多少資料（醫院主機上是 6_staff_account.bat）
+cd backend; npm run account -- create-staff nurse@example.invalid 12345678 王衛教師
+cd backend; npm run grant-role -- nurse@example.invalid RESEARCHER
+
+# 後端：醫院主機設定的端到端檢查（37 項：HTTPS、研究編號、限流、防睡眠；需要 openssl）
+cd backend; npm run check:hospital
+
+# 醫院主機用的離線安裝包（含 node.exe，主機不需要網路與系統管理員）
+node deploy/windows/build-bundle.mjs
 
 # 後端：忘記密碼功能的端到端檢查（36 項，含惡意情境）
 cd backend; npm run check:password-reset
@@ -202,7 +210,7 @@ cd backend; npm run backup:db -- ../backup-kidney.db
 ## 已完成的功能
 
 **核心記錄**
-- Email + 密碼註冊/登入（JWT access token + 可撤銷的 refresh token）
+- **研究編號 + 密碼登入**：病人帳號由衛教師在 App 裡建立，只存研究編號、不存姓名（醫院端規定）；不開放自己註冊。衛教師與舊帳號用 email 登入（JWT access token + 可撤銷的 refresh token）
 - **忘記密碼**：衛教師當面開一組 **8 位數字**的代碼給病人（主要方式，因為帳號是衛教師建的、
   病人的信箱不見得通），也可以寄到信箱。輸入時是數字鍵盤，對年長病人友善（見
   [ARCHITECTURE.md 的「忘記密碼」](docs/ARCHITECTURE.md)）

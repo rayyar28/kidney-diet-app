@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useSyncStore } from "../offline/syncStore";
 import { useMealViews } from "../offline/useMealViews";
-import { useAuthStore } from "../store/auth";
+import { accountLabel, useAuthStore } from "../store/auth";
 import { useToastStore } from "../store/toast";
 import { clearTrialData } from "../trial/trialData";
 import { BottomNav } from "../components/BottomNav";
@@ -67,8 +67,9 @@ export function ProfilePage() {
     <div className="app-shell">
       <div className="top-bar">
         <div>
-          <h1 className="page-title">{user?.displayName}</h1>
-          <p className="page-hint">{user?.email}</p>
+          <h1 className="page-title">{accountLabel(user)}</h1>
+          {/* 病人帳號只有研究編號：標題就是編號，這行說明它是什麼（回診時唸給衛教師聽） */}
+          <p className="page-hint">{user?.email ?? (user?.patientRef ? "研究編號" : "")}</p>
         </div>
       </div>
 
@@ -101,9 +102,10 @@ export function ProfilePage() {
         <button className="btn btn-secondary" onClick={() => navigate("/profile/health")}>
           🩺 我的健康資料
         </button>
+        {/* 建帳號、開重設代碼都收在衛教師工具裡：多一顆按鈕這一頁就會超出畫面（量過） */}
         {isStaff && (
-          <button className="btn btn-secondary" onClick={() => navigate("/staff/reset")}>
-            🔑 協助病人重設密碼
+          <button className="btn btn-secondary" onClick={() => navigate("/staff")}>
+            🧑‍⚕️ 衛教師工具
           </button>
         )}
         {trial ? (
