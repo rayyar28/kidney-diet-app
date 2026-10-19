@@ -113,6 +113,16 @@ export const env = {
    */
   allowPublicRegistration: process.env.ALLOW_PUBLIC_REGISTRATION === "true",
 
+  /**
+   * 開放「寄信到信箱」找回密碼。**預設關閉。**
+   *
+   * 醫院主機寄不出信（MAIL_DRIVER=console），但這條路如果開著，系統照樣會產生重設代碼，
+   * 只是把它印進主機的 log 檔：看得到 log 的人就能用它重設別人的密碼，
+   * 病患則會看到「已寄出」卻永遠收不到。所以寄不出信的地方，這條路要整個關掉；
+   * 病患忘記密碼一律由衛教師當面開代碼（staff.routes.ts）。
+   */
+  allowEmailPasswordReset: process.env.ALLOW_EMAIL_PASSWORD_RESET === "true",
+
   databaseUrl: required("DATABASE_URL"),
 
   jwtAccessSecret: required("JWT_ACCESS_SECRET"),

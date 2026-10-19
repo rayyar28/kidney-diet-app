@@ -322,6 +322,8 @@ async function startServer() {
       APP_URL: "",
       // 這個腳本自己註冊測試帳號（正式環境的註冊是關的）
       ALLOW_PUBLIC_REGISTRATION: "true",
+      // 這支檢查要驗 email 找回密碼那條路（正式的醫院主機上是關的，由 check-hospital.mjs 驗）
+      ALLOW_EMAIL_PASSWORD_RESET: "true",
       // 用假的 X-Forwarded-For 隔開每個請求的限流（見上面 freshIp 的說明）。
       // 正式的醫院主機前面沒有代理，是 false——那個情況由 check-hospital.mjs 驗證。
       TRUST_PROXY: "1",

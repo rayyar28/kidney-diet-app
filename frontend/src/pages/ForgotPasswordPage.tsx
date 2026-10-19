@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, NetworkError } from "../api/client";
 
@@ -9,7 +9,9 @@ import { api, NetworkError } from "../api/client";
  * 他可能從頭到尾沒打過自己的密碼，填的信箱也可能是衛教師隨手給的、他根本收不到。
  * 對這些病人，唯一真正可行的路是回診時請衛教師當面開一組代碼。
  *
- * email 那條路保留、但排在後面，給自己註冊、信箱真的會收的人用。
+ * email 那條路保留、但排在後面，給自己註冊、信箱真的會收的人用。**伺服器關掉這條路時
+ * （醫院主機寄不出信，預設就是關的），這一欄整個不顯示**——由 /health 的 features 決定。
+ * 問不到伺服器（離線）也不顯示：那時候寄信本來就不可能成功。
  *
  * 不論這個信箱有沒有註冊，畫面都顯示同一句話——後端也是一律回 204。
  * 如果這裡會出現「查無此帳號」，任何人都能拿它逐一測試某個人是不是這個腎臟病研究的
@@ -21,6 +23,20 @@ export function ForgotPasswordPage() {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [emailEnabled, setEmailEnabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ features?: { emailPasswordReset?: boolean } }>("/health")
+      .then((h) => !cancelled && setEmailEnabled(h.features?.emailPasswordReset === true))
+      .catch(() => {
+        /* 離線或伺服器較舊：維持不顯示 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -67,7 +83,9 @@ export function ForgotPasswordPage() {
       <div className="top-bar">
         <div>
           <h1 className="page-title">忘記密碼</h1>
-          <p className="page-hint">請衛教師幫你開一組代碼，或寄到你的信箱</p>
+          <p className="page-hint">
+            {emailEnabled ? "請衛教師幫你開一組代碼，或寄到你的信箱" : "請回診時找衛教師，當面幫你開一組代碼"}
+          </p>
         </div>
       </div>
 
@@ -78,26 +96,32 @@ export function ForgotPasswordPage() {
           <span className="hero-hint">衛教師給你的 8 個數字</span>
         </button>
 
-        <div className="section-title">或：寄到我的信箱</div>
-        <form id="forgot-form" className="field" onSubmit={onSubmit}>
-          <input
-            className="input"
-            type="email"
-            autoComplete="username"
-            autoCapitalize="none"
-            required
-            placeholder="註冊時用的 Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </form>
-        {error && <p className="error-text">{error}</p>}
+        {emailEnabled && (
+          <>
+            <div className="section-title">或：寄到我的信箱</div>
+            <form id="forgot-form" className="field" onSubmit={onSubmit}>
+              <input
+                className="input"
+                type="email"
+                autoComplete="username"
+                autoCapitalize="none"
+                required
+                placeholder="註冊時用的 Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </form>
+            {error && <p className="error-text">{error}</p>}
+          </>
+        )}
       </div>
 
       <div className="page-footer">
-        <button className="btn btn-secondary" type="submit" form="forgot-form" disabled={loading}>
-          {loading ? "申請中…" : "寄出重設代碼"}
-        </button>
+        {emailEnabled && (
+          <button className="btn btn-secondary" type="submit" form="forgot-form" disabled={loading}>
+            {loading ? "申請中…" : "寄出重設代碼"}
+          </button>
+        )}
         <Link to="/login" className="link-btn" style={{ textAlign: "center" }}>
           回到登入
         </Link>

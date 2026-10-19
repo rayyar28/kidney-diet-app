@@ -55,7 +55,13 @@ app.use(express.json());
  * 多帶一個 service 名稱：這台主機以前跑的是醫院那套 FastAPI 後端，用同一個 port。
  * 打開 /health 看到 "kidney-diet" 才能確定接電話的是我們，而不是舊的那套還開著。
  */
-const healthBody = { ok: true, service: "kidney-diet", version: process.env.APP_VERSION ?? "dev" };
+const healthBody = {
+  ok: true,
+  service: "kidney-diet",
+  version: process.env.APP_VERSION ?? "dev",
+  // App 依這個決定「忘記密碼」頁要不要出現「寄到信箱」那一欄（關閉的功能就不要讓長輩看到）
+  features: { emailPasswordReset: env.allowEmailPasswordReset },
+};
 app.get("/health", (_req, res) => res.json(healthBody));
 app.get("/api/health", (_req, res) => res.json(healthBody));
 

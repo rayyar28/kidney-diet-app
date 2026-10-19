@@ -95,6 +95,7 @@ function startBackend({ dbUrl, uploadDir, tls, extraEnv = {} }) {
       PUBLIC_HOST: "127.0.0.1",
       TRUST_PROXY: "", // 不設定 → 自己提供 HTTPS 時應該自動是 false
       ALLOW_PUBLIC_REGISTRATION: "false",
+      ALLOW_EMAIL_PASSWORD_RESET: "false",
       STORAGE_DRIVER: "local",
       UPLOAD_DIR: uploadDir,
       MAIL_DRIVER: "console",
@@ -373,6 +374,87 @@ async function main() {
 
     const profile = await request("/api/profile", { ca: tls.ca, token: patient.json?.accessToken });
     check("個人資料回傳研究編號、沒有姓名", profile.json?.user?.patientRef === "P0012" && profile.json?.user?.displayName === null);
+
+    // ---- 照片隱私與 email 找回密碼（IRB 技術章節要寫的兩件事）----
+    section("4b. 照片不帶 GPS、email 找回密碼確實關閉");
+    {
+      // 一張帶著 EXIF 的照片：直拍（Orientation=6，像素是橫的、要轉 90 度才是正的）＋可辨識的 EXIF 文字
+      const { default: sharp } = await import("sharp");
+      const MARK = "check-hospital-exif-marker";
+      const original = await sharp({ create: { width: 400, height: 200, channels: 3, background: "#c0392b" } })
+        .jpeg()
+        .withMetadata({ orientation: 6 })
+        .withExif({ IFD0: { Artist: MARK, ImageDescription: "GPS test image" } })
+        .toBuffer();
+      const before = await sharp(original).metadata();
+      const hadExif = Boolean(before.exif) && original.includes(Buffer.from(MARK));
+      check("（前提）測試照片確實帶著 EXIF 與方向資訊", hadExif && before.orientation === 6, JSON.stringify({ exif: !!before.exif, o: before.orientation }));
+
+      // 跟 App 一樣用 multipart 上傳餐前照
+      const boundary = "----checkhospital" + Date.now();
+      const field = (name, value) => `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`;
+      const mealId = crypto.randomUUID();
+      const body = Buffer.concat([
+        Buffer.from(
+          field("id", mealId) +
+            field("mealType", "LUNCH") +
+            field("capturedAt", new Date().toISOString()) +
+            field("tzOffsetMinutes", "-480") +
+            `--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="gps.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`
+        ),
+        original,
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]);
+      const up = await new Promise((resolve, reject) => {
+        const req = https.request(
+          {
+            host: "127.0.0.1",
+            port: PORT,
+            path: "/api/meals/pre-meal",
+            method: "POST",
+            ca: tls.ca,
+            headers: {
+              "Content-Type": `multipart/form-data; boundary=${boundary}`,
+              "Content-Length": body.length,
+              Authorization: `Bearer ${patient.json?.accessToken}`,
+            },
+          },
+          (res) => {
+            let data = "";
+            res.on("data", (c) => (data += c));
+            res.on("end", () => resolve({ status: res.statusCode, json: JSON.parse(data || "null") }));
+          }
+        );
+        req.on("error", reject);
+        req.end(body);
+      });
+      check("帶 EXIF 的照片可以正常上傳", up.status === 201, JSON.stringify(up));
+
+      const storageKey = up.json?.photo?.storageKey;
+      const stored = storageKey ? readFileSync(join(uploadDir, storageKey)) : Buffer.alloc(0);
+      const after = stored.length ? await sharp(stored).metadata() : {};
+      check(
+        "伺服器存下來的照片沒有任何 EXIF（GPS 不會進研究資料庫）",
+        stored.length > 0 && !after.exif && !stored.includes(Buffer.from(MARK)),
+        JSON.stringify({ exif: !!after.exif, marker: stored.includes(Buffer.from(MARK)) })
+      );
+      check(
+        "照片已依原本的方向轉正（400×200 的直拍照片存成 200×400），去掉 EXIF 不會讓照片橫躺",
+        after.width === 200 && after.height === 400 && up.json?.photo?.widthPx === 200 && up.json?.photo?.heightPx === 400,
+        JSON.stringify({ w: after.width, h: after.height })
+      );
+    }
+    {
+      const h = await request("/health", { ca: tls.ca });
+      check("/health 告訴 App：email 找回密碼是關的（忘記密碼頁不顯示那一欄）", h.json?.features?.emailPasswordReset === false, JSON.stringify(h.json));
+      const before = server.output().length;
+      const fp = await request("/api/auth/forgot-password", { method: "POST", ca: tls.ca, body: { email: staffEmail } });
+      check("寄信找回密碼 → 403，請病患找衛教師", fp.status === 403 && /衛教師/.test(fp.json?.error ?? ""), JSON.stringify(fp));
+      const unknown = await request("/api/auth/forgot-password", { method: "POST", ca: tls.ca, body: { email: "nobody@example.invalid" } });
+      check("不存在的信箱也是同一個回應（關閉時一樣不能透露帳號存不存在）", unknown.status === fp.status && unknown.json?.error === fp.json?.error);
+      await new Promise((r) => setTimeout(r, 500));
+      check("重設代碼沒有被印進主機的 log", !/密碼重設信/.test(server.output().slice(before)), server.output().slice(before, before + 300));
+    }
 
     // ---- 限流不能被假的 X-Forwarded-For 繞過 ----
     section("5. 前面沒有代理時，假的 X-Forwarded-For 繞不過限流");

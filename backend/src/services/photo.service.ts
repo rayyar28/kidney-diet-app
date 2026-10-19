@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import path from "path";
-import sharp, { type Metadata } from "sharp";
+import sharp from "sharp";
 import { Prisma, type Photo } from "@prisma/client";
 import { prisma } from "../prisma.js";
 import { storageService } from "./storage.service.js";
@@ -35,6 +35,36 @@ function sniffImageFormat(buf: Buffer): "jpeg" | "png" | "webp" | "heif" | null 
   if (buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "webp";
   if (buf.toString("ascii", 4, 8) === "ftyp" && HEIF_BRANDS.has(buf.toString("ascii", 8, 12))) return "heif";
   return null;
+}
+
+/**
+ * 去掉照片裡所有的中繼資料（EXIF，含 GPS 座標、拍攝裝置序號等），重新編碼成 JPEG。
+ *
+ * **為什麼在伺服器上一定要做這一次**：手機端壓縮照片時重新編碼，本來就會順便去掉 EXIF，
+ * 但有三種情況手機會直接送原檔：解碼失敗（例如 HEIC）、壓完反而比較大、瀏覽器不支援。
+ * 這時 GPS 會原封不動進到研究資料庫——病患在家拍的照片，等於記下了他家的座標。
+ * 在伺服器這裡統一處理，不管手機端發生什麼事，存下來的照片都保證不含 EXIF。
+ *
+ * 先 rotate() 再丟掉中繼資料：手機照片的「直拍/橫拍」記在 EXIF 的 Orientation 裡，
+ * 沒有先依它把像素轉正，直拍的照片丟掉 EXIF 之後會變成橫躺。
+ * sharp 輸出時預設不帶任何中繼資料（除非呼叫 withMetadata / keepExif），這裡刻意不呼叫。
+ *
+ * 判斷「重送」用的 sha256 仍然是手機送來的原檔（呼叫端計算），不受這裡影響：
+ * 同一張照片重送，原檔一樣、雜湊就一樣。
+ */
+async function stripMetadata(input: Buffer): Promise<{ buffer: Buffer; width: number; height: number }> {
+  try {
+    const { data, info } = await sharp(input)
+      .rotate()
+      .jpeg({ quality: 90 })
+      .toBuffer({ resolveWithObject: true });
+    if (!info.width || !info.height) throw new Error("no dimensions");
+    return { buffer: data, width: info.width, height: info.height };
+  } catch {
+    // 這台伺服器的 sharp 不支援 HEIC（只認 AVIF），HEIC 會在這裡被拒絕。
+    // App 內建的相機一律產生 JPEG，所以只有「從相簿選 HEIC、手機又轉不了」才會遇到。
+    throw new HttpError(400, "無法處理這張照片的格式，請改用 App 裡的相機拍照");
+  }
 }
 
 function resolveExisting(existing: Photo, sha256Hash: string): { photo: Photo; replayed: true } {
@@ -72,24 +102,15 @@ export async function ingestPhoto(params: {
     throw new HttpError(400, "只接受 JPEG / PNG / WEBP / HEIC 格式的照片");
   }
 
-  let metadata: Metadata;
-  try {
-    metadata = await sharp(photo.buffer).metadata();
-  } catch {
-    throw new HttpError(400, "無法解析這張圖片，請確認檔案是有效的照片格式");
-  }
-  if (!metadata.width || !metadata.height) {
-    throw new HttpError(400, "無法讀取照片的像素尺寸");
-  }
+  const clean = await stripMetadata(photo.buffer);
 
-  const ext = (metadata.format ?? "jpg").replace("jpeg", "jpg");
   // 檔名不含時間戳：同一筆紀錄的同一階段永遠是同一個 key，重送時覆蓋同一個檔案，
-  // 不會在儲存空間留下孤兒檔案。
-  const keyHint = path.posix.join(userId, mealRecordId, `${phase.toLowerCase()}.${ext}`);
+  // 不會在儲存空間留下孤兒檔案。存下來的一律是 JPEG（見 stripMetadata）。
+  const keyHint = path.posix.join(userId, mealRecordId, `${phase.toLowerCase()}.jpg`);
   const storageKey = await storageService.save({
-    buffer: photo.buffer,
+    buffer: clean.buffer,
     keyHint,
-    contentType: photo.mimeType,
+    contentType: "image/jpeg",
   });
 
   // 欄位是 32 位元整數；時鐘偏差極端時夾在範圍內，避免溢位變成 500
@@ -105,10 +126,11 @@ export async function ingestPhoto(params: {
         phase,
         storageKey,
         originalFileName: photo.originalFileName,
-        mimeType: photo.mimeType,
-        fileSizeBytes: photo.buffer.length,
-        widthPx: metadata.width,
-        heightPx: metadata.height,
+        // 記的是「實際存下來的那個檔案」：格式、大小、轉正之後的寬高
+        mimeType: "image/jpeg",
+        fileSizeBytes: clean.buffer.length,
+        widthPx: clean.width,
+        heightPx: clean.height,
         sha256Hash,
         capturedAt: photo.capturedAt,
         clientTimezoneOffsetMin: photo.tzOffsetMinutes,

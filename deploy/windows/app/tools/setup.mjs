@@ -103,8 +103,9 @@ if (cfg) {
     "KEEP_AWAKE=true",
     "# 帳號由衛教師建立，不開放自己註冊",
     "ALLOW_PUBLIC_REGISTRATION=false",
-    "# 院內電腦寄不出信：忘記密碼一律由衛教師當面開代碼",
+    "# 院內電腦寄不出信：忘記密碼一律由衛教師當面開代碼，「寄到信箱」整條路關閉",
     "MAIL_DRIVER=console",
+    "ALLOW_EMAIL_PASSWORD_RESET=false",
     "",
   ].join("\r\n");
   writeFileSync(CONFIG_FILE, content);

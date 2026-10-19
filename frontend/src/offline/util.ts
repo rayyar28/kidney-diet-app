@@ -58,7 +58,7 @@ export function computeTargetSize(
 
 /**
  * 壓縮照片。任何一步失敗（例如瀏覽器解不開 HEIC）都回傳原檔，
- * 寧可佔空間也不要讓病人的照片上傳不了。
+ * 寧可佔空間也不要讓病人的照片上傳不了——原檔的 EXIF 由伺服器負責去除。
  */
 export async function compressImage(file: File): Promise<File> {
   try {
@@ -78,8 +78,10 @@ export async function compressImage(file: File): Promise<File> {
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/jpeg", UPLOAD_JPEG_QUALITY)
     );
-    // 壓完反而更大就用原檔（小圖、或本來就壓得很好的 JPEG 會這樣）
-    if (!blob || blob.size >= file.size) return file;
+    // 就算壓完比原檔大也用重新編碼的版本：原檔帶著 EXIF（含 GPS），而另存到相簿的、
+    // 離線暫存的都是這一份。多幾十 KB 換「手機上這份不含位置」是值得的。
+    // （伺服器收到後還會再去除一次 EXIF，見 backend/src/services/photo.service.ts 的 stripMetadata）
+    if (!blob) return file;
     const name = file.name.replace(/\.[^.]+$/, "") || "photo";
     return new File([blob], `${name}.jpg`, { type: "image/jpeg", lastModified: file.lastModified });
   } catch {

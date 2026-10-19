@@ -195,7 +195,7 @@ cd backend; npm run prisma:migrate
 cd backend; npm run account -- create-staff nurse@example.invalid 12345678 王衛教師
 cd backend; npm run grant-role -- nurse@example.invalid RESEARCHER
 
-# 後端：醫院主機設定的端到端檢查（37 項：HTTPS、研究編號、限流、防睡眠；需要 openssl）
+# 後端：醫院主機設定的端到端檢查（45 項：HTTPS、研究編號、限流、防睡眠、照片去 EXIF、找回密碼開關；需要 openssl）
 cd backend; npm run check:hospital
 
 # 醫院主機用的離線安裝包（含 node.exe，主機不需要網路與系統管理員）

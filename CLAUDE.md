@@ -49,6 +49,10 @@
   `check:hospital` 有一項專門測這個，變異測試確認拿掉保護後連續 21 次猜密碼都不會被擋。
 - **醫院主機的 IP、CA、主機名稱不能進版控**（repo 是公開的）。放在 `deploy/hospital.local.json`（已忽略）；
   打包醫院版 APK 用 `frontend/scripts/hospital-apk.mjs apply` / `restore`，忘記 restore 前端測試會失敗。
+- **伺服器存下來的照片一律不含 EXIF**（`photo.service.ts` 的 `stripMetadata`）。手機端重新編碼只是
+  「通常會」去掉，解碼失敗時會送原檔；GPS 進研究資料庫等於記下病患家的座標。IRB 文件依賴這一點。
+- **email 找回密碼預設關閉**（`ALLOW_EMAIL_PASSWORD_RESET`）。醫院主機寄不出信，開著的話代碼會被印進 log。
+  忘記密碼頁依 `/health` 的 `features.emailPasswordReset` 決定要不要顯示那一欄。
 - **`appId`（`tw.edu.project.kidneydiet`）發佈後不能改。** 改了就無法覆蓋安裝，
   而解除安裝會清掉手機裡還沒上傳的離線紀錄。
 - **遊戲化規則在前後端各有一份**。這是刻意的重複：病人常常是離線的，點數要在手機上
@@ -137,7 +141,7 @@ cd backend && npm run build
 # 忘記密碼的端到端檢查（36 項，含惡意情境）— 動到 auth 相關就跑一次
 cd backend && npm run check:password-reset
 
-# 醫院主機設定的端到端檢查（37 項：HTTPS、研究編號、限流、防睡眠）— 動到帳號、啟動、設定就跑一次
+# 醫院主機設定的端到端檢查（45 項：HTTPS、研究編號、限流、防睡眠、照片去 EXIF、找回密碼開關）— 動到帳號、啟動、設定就跑一次
 # 需要 openssl（Git for Windows 有附）
 cd backend && npm run check:hospital
 

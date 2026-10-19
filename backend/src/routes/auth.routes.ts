@@ -157,6 +157,10 @@ const forgotSchema = z.object({ email: z.string().email() });
  */
 authRouter.post("/forgot-password", forgotPasswordLimiter, async (req, res, next) => {
   try {
+    // 關閉時對每一個請求都回同一句話，不看信箱是什麼——跟開啟時一樣，不能透露帳號存不存在
+    if (!env.allowEmailPasswordReset) {
+      throw new HttpError(403, "請回診時找衛教師，當面幫你開一組重設代碼");
+    }
     const body = forgotSchema.parse(req.body);
     const issued = await requestSelfServiceReset(body.email);
     res.status(204).send();

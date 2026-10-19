@@ -216,6 +216,19 @@
 現在改寫成帳號工具（`npm run account`，`grant-role` 仍可用），而且放在會被型別檢查的地方，不會再默默壞掉。
 關閉公開註冊之後，這支工具成了建立第一個衛教師帳號的唯一方式，所以這次一定要修。
 
+### 9. 2026-10-19 補上：照片一律去除 EXIF、email 找回密碼關閉
+
+寫 IRB 技術章節時逐項回程式碼查證，發現兩件事跟原本的說法不一樣：
+
+- **「照片不含 GPS」不是每次都成立**。手機端壓縮時重新編碼通常會去掉 EXIF，但解碼失敗（例如 HEIC）時
+  會直接送原檔，而後端原本只讀尺寸、不處理。現在後端收到照片**一律先依方向轉正、再重新編碼**，
+  存下來的照片保證不含 EXIF；判斷重送用的雜湊仍是手機送來的原檔。
+- **「email 找回密碼」沒有開關**。醫院主機寄不出信，但這條路開著時系統照樣產生代碼、印進 log。
+  現在由 `ALLOW_EMAIL_PASSWORD_RESET` 控制，**預設關閉**；App 的忘記密碼頁依 `/health` 決定要不要顯示那一欄。
+
+`check:hospital` 增加 8 項（上傳一張帶 EXIF 與直拍方向的照片，讀伺服器存下的檔案確認不含 EXIF、
+方向正確；確認找回密碼回 403、代碼沒有進 log），三個變異測試都會讓對應的檢查失敗。
+
 ---
 
 ## 三、怎麼驗證的
@@ -224,7 +237,7 @@
 
 | 驗證 | 結果 |
 |---|---|
-| 新的醫院設定檢查（`npm run check:hospital`）：用一張測試用 CA，以跟醫院主機完全相同的設定啟動後端，從外面打 | **37 / 37** |
+| 新的醫院設定檢查（`npm run check:hospital`）：用一張測試用 CA，以跟醫院主機完全相同的設定啟動後端，從外面打 | **37 / 37**（10/19 增為 45 項，見第 9 點） |
 | 既有的忘記密碼檢查（`npm run check:password-reset`，含惡意情境） | **36 / 36** |
 | 前端自動化測試 | **188 項**（新增 4 項：防止醫院資訊被 commit） |
 | **變異測試**：故意把 6 個安全相關的地方改壞，確認檢查真的會失敗 | **6 / 6 都被抓到** |
@@ -328,7 +341,7 @@
 | `backend/src/system/tls.ts` | 啟動時檢查憑證 |
 | `backend/src/system/keepAwake.ts` | 執行期間不讓 Windows 睡眠 |
 | `backend/src/cli/account.ts` | 主機上的帳號工具（取代壞掉的 `grant-role.ts`） |
-| `backend/scripts/check-hospital.mjs` | 醫院設定的端到端檢查（37 項） |
+| `backend/scripts/check-hospital.mjs` | 醫院設定的端到端檢查（45 項） |
 | `deploy/windows/` | 安裝包建置腳本、編號 1～10 的操作腳本與工具 |
 | `frontend/src/pages/StaffHubPage.tsx`、`StaffCreatePatientPage.tsx` | 衛教師工具、幫病人建帳號 |
 | `frontend/src/pages/LoginPage.tsx`、`StaffResetPage.tsx` 等 | 改用研究編號；畫面上顯示研究編號而不是姓名 |
