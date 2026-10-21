@@ -216,6 +216,28 @@ AWAITING_POST_PHOTO --(病人主動放棄)--> ABANDONED
 標籤，而不是從 EXIF 反推。另外，**若之後要改用 EXIF 的拍攝時間，必須在前端壓縮之前
 讀取**，否則資訊已經被移除。
 
+**【草稿 2026-10-21】血壓照片也存在這張表**：一張照片屬於一筆用餐紀錄（`mealRecordId`，
+`phase` 為 `PRE_MEAL` / `POST_MEAL`）**或**一筆血壓紀錄（`bpReadingId`，`phase` 為 `BP_MONITOR`），
+兩者擇一。不另開一張血壓照片表，是為了讓去 EXIF、研究中繼資料、讀取權限、研究匯出與到期刪除
+都只有一個地方要做。「擇一」沒辦法用資料庫約束表達（Prisma 不支援 SQLite 的 CHECK），
+由寫入的程式碼保證；血壓照片也不建立 `NutritionEstimate`。
+
+### `BpReading`（一次血壓量測 — 草稿，待血壓組確認）
+血壓組 App 併入後的資料表（2026-10-21 起草，見兩組的〈後端整合差異對照〉）。
+一筆 = 病人量一次血壓、在手機上核對確認後的結果；手機上未確認的草稿不上傳。
+
+| 欄位 | 用途 |
+|---|---|
+| `id` | 手機產生的紀錄 UUID，直接當主鍵（同 `MealRecord`）。重送同一筆：內容相同回原結果、不同回 409；別人用過的 ID 也回 409，且不分辨「不存在」與「屬於別人」 |
+| `systolic` / `diastolic` / `pulse` | mmHg / 次每分鐘。範圍與「收縮壓 > 舒張壓」在 API 邊界檢查（理由同上：Prisma 不支援 CHECK） |
+| `measuredAt` + `clientTimezoneOffsetMin` | 量測時間（UTC，裝置時鐘原始值）＋手機時區；「算哪一天」跟用餐紀錄同一套算法 |
+| `source` | `OCR`（辨識後病人確認）或 `MANUAL`（自己輸入或改過）。可算出辨識結果在真實使用中被修正的比例 |
+| `capturedOffline` / `clientClockSkewSeconds` | 同 `Photo` 的同名欄位 |
+| `deletedAt` | 軟刪除，理由同 `MealRecord` |
+
+`migration 20261021090000_bp_readings` 會重建 `photos` 表（把 `mealRecordId` 改成可為空）。
+已在暫存資料庫上驗證：既有照片的每個欄位、營養估計的對應、外鍵檢查都不受影響。
+
 ### `NutritionEstimate`（辨識結果 — 目前完全是空的預留表）
 每張照片上傳時都會自動建立一筆，狀態預設 `NOT_STARTED`。現階段**沒有任何程式
 會去改動這張表的內容**，但先建好的好處是：

@@ -50,8 +50,22 @@ export const MealRecordStatus = asEnum([
 ] as const);
 export type MealRecordStatus = keyof typeof MealRecordStatus;
 
-export const PhotoPhase = asEnum(["PRE_MEAL", "POST_MEAL"] as const);
+export const PhotoPhase = asEnum([
+  "PRE_MEAL",
+  "POST_MEAL",
+  /** 【草稿】血壓紀錄的血壓計照片（Photo.bpReadingId 有值、mealRecordId 是 null） */
+  "BP_MONITOR",
+] as const);
 export type PhotoPhase = keyof typeof PhotoPhase;
+
+/** 【草稿】血壓數值的來源 */
+export const BpSource = asEnum([
+  /** 辨識出來後，病人核對確認、沒有修改 */
+  "OCR",
+  /** 病人自己輸入，或改過辨識結果 */
+  "MANUAL",
+] as const);
+export type BpSource = keyof typeof BpSource;
 
 export const NutritionEstimateStatus = asEnum(["NOT_STARTED", "PROCESSING", "COMPLETED", "FAILED"] as const);
 export type NutritionEstimateStatus = keyof typeof NutritionEstimateStatus;

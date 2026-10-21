@@ -49,6 +49,7 @@ model User {
 
   patientProfile PatientProfile?
   mealRecords    MealRecord[]
+  bpReadings     BpReading[]
   photos         Photo[]
   pointsLedger   PointsLedgerEntry[]
   streak         UserStreak?
@@ -141,13 +142,25 @@ model MealRecord {
 // 每一張照片的完整技術中繼資料。刻意記錄得比目前功能需要的更詳細一點，
 // 是因為這些欄位在「辨識模型還沒選定」的階段最有研究價值
 // (例如：不同像素/檔案大小/裝置的照片，之後跑辨識模型的準確率是否有差異)。
+//
+// 【草稿 2026-10-21】血壓紀錄的照片也存在這張表，不另開一張：
+// 去 EXIF（stripMetadata）、研究用中繼資料、照片讀取的權限檢查（photos.routes 依 userId 判斷）、
+// 日後的研究匯出與到期刪除，全部只有一個地方要做，IRB 文件也只要描述一張照片表。
+// 所以一張照片「屬於一筆用餐紀錄」或「屬於一筆血壓紀錄」，兩者擇一：
+//   用餐照片：mealRecordId 有值、bpReadingId 是 null、phase = PRE_MEAL | POST_MEAL
+//   血壓照片：bpReadingId 有值、mealRecordId 是 null、phase = BP_MONITOR
+// SQLite 的 CHECK 約束 Prisma 不支援（手寫進 migration 的話，下次 Prisma 重建這張表時會被悄悄拿掉），
+// 所以「擇一」由寫入的程式碼保證，並且要有測試守著。
+// 血壓照片不建立 NutritionEstimate（那是食物模型用的）。
 model Photo {
-  id           String     @id @default(uuid())
+  id           String      @id @default(uuid())
   userId       String
-  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mealRecordId String
-  mealRecord   MealRecord @relation(fields: [mealRecordId], references: [id], onDelete: Cascade)
-  phase        String // PRE_MEAL | POST_MEAL
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mealRecordId String?
+  mealRecord   MealRecord? @relation(fields: [mealRecordId], references: [id], onDelete: Cascade)
+  bpReadingId  String?     @unique // 一筆血壓紀錄最多一張照片
+  bpReading    BpReading?  @relation(fields: [bpReadingId], references: [id], onDelete: Cascade)
+  phase        String // PRE_MEAL | POST_MEAL | BP_MONITOR
 
   // 檔案本身
   storageKey       String  @unique // 在 storage provider 內的相對路徑/物件 key，不寫死本機路徑
@@ -181,10 +194,61 @@ model Photo {
 
   // 同一筆用餐紀錄的同一個階段 (餐前/餐後) 只會有一張照片。
   // 離線補傳時同一個請求可能被重送，靠這個限制保證重送不會產生重複照片。
+  // (血壓照片的 mealRecordId 是 null；SQLite 的唯一限制把每個 null 視為不同的值，所以不受影響。)
   @@unique([mealRecordId, phase])
   @@index([mealRecordId])
   @@index([userId, capturedAt])
   @@map("photos")
+}
+
+// ============================== 血壓紀錄（草稿） ==============================
+
+// 【草稿 2026-10-21，待血壓組確認】血壓組 App 併入後的資料表。
+// 來源：血壓組 Python 後端的 bp_readings / photo_uploads，以及 10/21 兩組達成的共識
+// （以 Node 為主、研究編號帳號、不帶位置、UTC 時間＋另存手機時區、軟刪除、Prisma 慣例命名）。
+//
+// 一筆 = 病人量一次血壓、在手機上核對後確認的結果。手機上「拍了但還沒確認」的草稿不上傳。
+model BpReading {
+  // 手機產生的紀錄 UUID（血壓組的 record_id），跟 MealRecord 一樣直接當主鍵。
+  // 重送同一個 ID：內容相同 → 回原本的結果；內容不同 → 409。
+  // 主鍵是全域唯一，比血壓組提議的「(userId, recordId) 唯一」更嚴：別人用過的 ID 也回 409，
+  // 而且不分辨「不存在」與「屬於別人」，避免探測別人的紀錄 ID（同 meals.routes 的 assertUsable）。
+  id     String @id
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 單位一律 mmHg / 次每分鐘。合理範圍與「收縮壓 > 舒張壓」在 API 邊界（zod）檢查，
+  // 不靠資料庫：SQLite 的 CHECK 約束 Prisma 不支援。
+  // 範圍待血壓組對照手機端 validateValues() 確認。
+  systolic  Int
+  diastolic Int
+  pulse     Int
+
+  // 量測時間（血壓組的 captured_at）＝ 手機上拍照或手動輸入的時間，裝置時鐘的原始值。
+  // 存成 UTC；「這筆算哪一天」用 clientTimezoneOffsetMin 換回當地時間，跟用餐紀錄同一套算法。
+  measuredAt              DateTime
+  clientTimezoneOffsetMin Int
+
+  // OCR | MANUAL：數值是辨識出來後病人確認的，還是病人自己輸入或改過的。
+  // 研究用：可以算出辨識模型在真實使用中被病人修正的比例。
+  source String
+
+  // 離線補傳相關，意義同 Photo 的同名欄位；手機沒帶時用預設值。
+  capturedOffline        Boolean @default(false)
+  clientClockSkewSeconds Int?
+
+  // 量測當下拍的血壓計照片（最多一張，存在 Photo 表，已去 EXIF）。
+  // 手動輸入、沒有照片的紀錄這裡是空的。
+  photo Photo?
+
+  // 刪除一律軟刪除，理由同 MealRecord.deletedAt。
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now()) // 伺服器收到的時間
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, measuredAt]) // 趨勢查詢：某位病人一段時間內的紀錄
+  @@map("bp_readings")
 }
 
 // ============================== 營養辨識（預留） ==============================
