@@ -46,7 +46,7 @@
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 整體架構、為什麼這樣選型、離線優先設計、未來怎麼接辨識模型 |
 | [docs/DATABASE.md](docs/DATABASE.md) | 資料庫每張表的設計理由、ER 圖、研究用欄位的用途 |
-| [docs/HOSPITAL_BACKEND.md](docs/HOSPITAL_BACKEND.md) | **醫院主機版後端**：為什麼不能用 Docker、改了什麼、怎麼驗證、上線步驟（2026-10-18） |
+| [docs/HOSPITAL_BACKEND.md](docs/HOSPITAL_BACKEND.md) | **醫院主機版後端**：為什麼用原生執行而不用 Docker、改了什麼、怎麼驗證、上線步驟（2026-10-18） |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | 正式環境部署手冊（Render + Neon + R2 + Cloudflare Pages）與費用試算 |
 | [docs/MEETING_1007.md](docs/MEETING_1007.md) | **最新的進度報告**（10/01–10/07）：本週完成什麼、卡在哪、需要老師決定什麼 |
 | [docs/MEETING_0930.md](docs/MEETING_0930.md) | 前一期進度報告（09/22–09/30） |

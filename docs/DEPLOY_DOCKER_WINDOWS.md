@@ -1,6 +1,7 @@
 # 最精簡部署：Windows + GitHub + Docker
 
-> ⚠ **醫院主機不適用**（2026-10-18）：那台電腦不是系統管理員、連不到網路，裝不了 Docker。醫院主機改看 [HOSPITAL_BACKEND.md](./HOSPITAL_BACKEND.md)。這份只留給有管理員權限、能上網的機器（例如實驗室電腦）。
+> ⚠ **醫院主機不適用**（2026-10-18）：醫院主機用原生執行，改看 [HOSPITAL_BACKEND.md](./HOSPITAL_BACKEND.md)。這份只留給實驗室電腦這類機器。
+> （2026-10-19 更正：10/18 這裡寫「連不到網路、裝不了 Docker」是讀錯環境報告；主機其實有網路，也裝了 Docker Desktop。仍不用這份的理由見 HOSPITAL_BACKEND.md「一之一」。）
 
 只用 GitHub 和 Docker 部署到一台 Windows 電腦。完整版（為什麼這樣做、各種狀況怎麼處理）
 看 [DEPLOY_HOSPITAL.md](./DEPLOY_HOSPITAL.md)；這份只有要打的指令。

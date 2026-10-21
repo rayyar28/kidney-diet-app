@@ -51,7 +51,7 @@ flowchart LR
 | 資料庫 | **SQLite + Prisma ORM** | 關聯式資料庫最適合這種「病人-用餐-照片-辨識結果」高度結構化、彼此有明確關聯的資料；Prisma 讓 schema 即文件、migration 自動產生。選 SQLite 而不是 PostgreSQL 的理由見下方「為什麼是 SQLite」 |
 | 照片儲存 | **`StorageService` 介面，兩種實作**：本機磁碟（開發用）、**Cloudflare R2**（正式環境用，已實作） | 業務邏輯只認得介面（`save` / `read` / `getSignedReadUrl`），不需要知道實際存在哪裡；正式環境設 `STORAGE_DRIVER=r2`，後端幫每張照片簽發短效直連網址，讓瀏覽器直接跟 R2 拿檔案，照片流量不經過後端主機、也不用付流量費（見 `backend/src/services/storage.service.ts`） |
 | 本機開發環境 | **只要 Node.js**，用 `start-dev.ps1` 一鍵啟動後端與前端 | 資料庫是一個檔案，沒有服務要啟動、沒有連線字串要設、沒有權限問題。（改用 SQLite 之前，這台沒有系統管理員權限的開發機得用 `pg_ctl` 手動啟動一個獨立的 PostgreSQL 叢集才能跑起來。）|
-| 正式環境部署 | **醫院內自架**（Docker：後端 + Caddy，資料全部留在院內）。雲端方案（Render + Neon + R2 + Pages）降為備案 | 病人只在回診時連院內 Wi-Fi 同步，資料不離開醫院，IRB 上單純很多。見 [DEPLOY_HOSPITAL.md](./DEPLOY_HOSPITAL.md)；雲端備案見 [DEPLOY.md](./DEPLOY.md) |
+| 正式環境部署 | **醫院內自架**（後端在醫院的 Windows 主機上原生執行，用醫院 CA 的憑證直接提供 HTTPS，資料全部留在院內）。雲端方案（Render + Neon + R2 + Pages）降為備案 | 病人只在回診時連院內 Wi-Fi 同步，資料不離開醫院，IRB 上單純很多。見 [HOSPITAL_BACKEND.md](./HOSPITAL_BACKEND.md)（為什麼不用 Docker 也寫在那裡）；雲端備案見 [DEPLOY.md](./DEPLOY.md) |
 
 ## 為什麼是 SQLite
 

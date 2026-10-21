@@ -13,7 +13,7 @@
 | `docs/ARCHITECTURE.md` | 架構與**每個決定的理由**（離線優先、試用模式、忘記密碼、存相簿） |
 | `docs/DATABASE.md` | 每張表為什麼長這樣 |
 | `docs/DEPLOY.md` | 部署手冊（方案 A：雲端，**現為備案**）+ **正式收案前必須完成的清單** |
-| `docs/HOSPITAL_BACKEND.md` | **醫院主機實際的部署方式**（2026-10-18）：隨附 node.exe 的離線安裝包、用醫院 CA 的憑證、port 9443、研究編號帳號、編號 1～10 的操作腳本。**改後端前先讀**。下一列 DEPLOY_HOSPITAL.md 的**Docker 安裝章節在那台主機上不可行**（不是系統管理員、沒有網路），其餘章節（要問資訊室什麼、連線測試、IRB 時間線）仍適用 |
+| `docs/HOSPITAL_BACKEND.md` | **醫院主機實際的部署方式**（2026-10-18）：隨附 node.exe 的離線安裝包、用醫院 CA 的憑證、port 9443、研究編號帳號、編號 1～10 的操作腳本。**改後端前先讀**。下一列 DEPLOY_HOSPITAL.md 的**Docker 安裝章節不要照做**（Caddy 自己當 CA、開 8080，跟醫院 CA 與 port 限制衝突；主機其實有網路也有 Docker Desktop，但仍維持原生執行，理由見 HOSPITAL_BACKEND.md「一之一」），其餘章節（要問資訊室什麼、連線測試、IRB 時間線）仍適用 |
 | `docs/DEPLOY_HOSPITAL.md` | **現行部署方向**：醫院電腦自架 + 院內 Wi-Fi。含資訊室要問什麼、HTTPS/憑證、服務化、APK 打包、備份、故障排除 |
 | `docs/MEETING_1007.md` | 最新進度、卡住的決定（前一期是 `MEETING_0930.md`） |
 
@@ -102,8 +102,13 @@
   .\gradlew.bat assembleDebug
   ```
   `android/local.properties` 沒進版控，換電腦要自己建，內容是 `sdk.dir=D:/android-sdk`（**斜線**）。
-- **醫院主機不能用 Docker**：不是系統管理員、連不到 npm / PyPI、8080 不能用。後端用
-  `node deploy/windows/build-bundle.mjs` 包成離線 zip（含 node.exe 與 Windows 原生檔）帶過去解壓縮。
+- **醫院主機用原生執行，不用 Docker**：後端用 `node deploy/windows/build-bundle.mjs` 包成離線 zip
+  （含 node.exe 與 Windows 原生檔）帶過去解壓縮。主機**其實連得到外網、也裝了 Docker Desktop**
+  （10/18 寫成「沒網路、裝不了」是讀錯環境報告：那行寫 `HTTP 200 -> FAILED`，200 是成功，是檢查腳本判斷寫反）。
+  仍維持原生的理由：SQLite WAL 放在 Docker Desktop 的 Windows 掛載上會出鎖定問題、防睡眠要呼叫 Windows API、
+  防火牆只放行 `node.exe`、Docker Desktop 一樣要有人登入才啟動、大型機構要付費授權。
+  詳見 `docs/HOSPITAL_BACKEND.md`「一之一」。**引用檢查腳本的結論前，先對一下它依據的原始數值。**
+  不是系統管理員、8080 不能用，這兩點仍然成立。
 - **`deploy/windows/app/*.bat` 只能有 ASCII，而且要 CRLF**：主機主控台是 MS950，`.bat` 裡有中文會壞；
   只有 LF 的 `.bat` 遇到 goto/標籤會出錯（`.gitattributes` 已設 `*.bat eol=crlf`）。中文說明寫在 Node 工具裡。
 - **停 dev server 要整棵程序樹一起停**：只砍佔 port 的子程序，`tsx watch` 的父程序會留下來，累積下來會
